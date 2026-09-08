@@ -65,6 +65,32 @@ Required parameters:
 - pass | password
 - schema
 
+Optional parameters:
+
+- driver: which DB-API driver the adapter connects through. One of:
+  - `iris` (default when available): `iris.dbapi` from `intersystems-irispython`,
+    installed as a dependency. Works with `intersystems-iris` on top of it too.
+  - `sqlalchemy`: connect through the `sqlalchemy-intersystems-iris` dialect
+    (`pip install dbt-iris[sqlalchemy]`). Uses the dialect's connection hooks and pooling.
+  - `vendored`: the `intersystems_iris` 3.x pure-Python driver bundled in older wheels,
+    if it is installed. Kept for compatibility only. IRIS refuses CTE statements from its
+    xDBC protocol version (SQLCODE -385: protocol 65, where 69 is required), so models
+    that use a `WITH` clause cannot run on it.
+
+  The `DBT_IRIS_DRIVER` environment variable sets the same thing without editing the profile.
+
+### IRIS SQL notes
+
+- A `WITH` clause may not appear inside a derived table, and a `WITH` nested
+  inside another CTE's body fails to compile on the server. The adapter
+  rewrites both shapes automatically (hoisting and flattening CTEs), so
+  ephemeral models and models with their own CTEs work as tests, views, and
+  tables. Recursive CTEs are not yet supported by IRIS (DP-449898).
+- Multi-row `INSERT ... VALUES (...), (...)` is not IRIS SQL. Seeds are loaded
+  with `executemany`; write your own inserts as `INSERT ... SELECT ... UNION ALL`.
+- Incremental strategy support: `append` today. `merge` waits on IRIS `MERGE`
+  (DP-419256).
+
 ## Useful Links
 
 - [InterSystems Documentation](https://docs.intersystems.com/)
