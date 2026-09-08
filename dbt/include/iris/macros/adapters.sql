@@ -115,7 +115,7 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
     /* create_table_as */
     {{ sql_header if sql_header is not none }}
     create {% if temporary: -%}global temporary{%- endif %} table {{ relation }} as
-      {{ compiled_code }}
+      {{ adapter.flatten_nested_ctes(compiled_code) }}
   {%- elif language == 'python' -%}
     {{ py_write_table(compiled_code=compiled_code, target_relation=relation, temporary=temporary) }}
   {%- else -%}

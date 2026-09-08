@@ -59,3 +59,22 @@ def pytest_unconfigure(config):
     if config.iris and config.iris._container:
         print("Stopping IRIS container", config.iris)
         config.iris.stop()
+
+
+# The bundled intersystems_iris 3.x driver speaks xDBC protocol 65. IRIS 2026
+# refuses CTE statements from it (SQLCODE -385: "CTE statements over xDBC are
+# only supported by newer versions of the xDBC driver ... protocol '69' is
+# required"). Tests whose SQL needs a WITH clause cannot pass on that driver.
+_CTE_DEPENDENT = ("Ephemeral",)
+
+
+def pytest_collection_modifyitems(config, items):
+    if os.getenv("DBT_IRIS_DRIVER") != "vendored":
+        return
+    skip = pytest.mark.skip(
+        reason="vendored intersystems_iris 3.x driver (xDBC protocol 65) cannot run CTE statements; "
+        "IRIS requires protocol 69 (SQLCODE -385)"
+    )
+    for item in items:
+        if any(tag in item.nodeid for tag in _CTE_DEPENDENT):
+            item.add_marker(skip)
