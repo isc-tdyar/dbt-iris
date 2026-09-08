@@ -1,4 +1,5 @@
 import time
+import importlib
 from typing import Optional, Tuple, Any, Type, Union
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -10,13 +11,16 @@ from dbt.adapters.events.logging import AdapterLogger
 from dbt.adapters.sql import SQLConnectionManager
 from dbt_common.events.functions import fire_event
 from dbt.adapters.events.types import ConnectionUsed, SQLQuery, SQLQueryStatus
-import intersystems_iris.dbapi._DBAPI as dbapi
-from intersystems_iris.dbapi._SQLType import SQLType
 from dbt_common.helper_types import Port
 from mashumaro.jsonschema.annotations import Maximum, Minimum
 from typing_extensions import Annotated
 
 logger = AdapterLogger("iris")
+
+
+def _dbapi():
+    """`iris.dbapi` from intersystems-irispython, the only driver the adapter uses."""
+    return importlib.import_module("iris.dbapi")
 
 
 @dataclass
@@ -100,10 +104,8 @@ class IRISConnectionManager(SQLConnectionManager):
         kwargs["username"] = credentials.username
         kwargs["password"] = credentials.password
 
-        kwargs["application_name"] = credentials.application_name
-
         try:
-            connection.handle = dbapi.connect(**kwargs)
+            connection.handle = _dbapi().connect(**kwargs)
             connection.state = "open"
         except Exception as e:
             raise FailedToConnectError(str(e))
@@ -173,6 +175,8 @@ class IRISConnectionManager(SQLConnectionManager):
             )
             if many:
                 cursor.executemany(sql, bindings)
+            elif bindings is None:
+                cursor.execute(sql)
             else:
                 cursor.execute(sql, bindings)
 
@@ -186,7 +190,13 @@ class IRISConnectionManager(SQLConnectionManager):
             return connection, cursor
 
     @classmethod
+    def process_results(cls, column_names, rows):
+        # intersystems-irispython 5.x returns DataRow proxies bound to the cursor;
+        # dbt reads results after the cursor is released. Copy values out first.
+        return super().process_results(column_names, [tuple(r) for r in rows])
+
+    @classmethod
     def data_type_code_to_name(cls, type_code: Union[int, str]) -> str:
         if isinstance(type_code, int):
-            return SQLType(type_code).name
+            return _dbapi().SQLType(type_code).name
         return f"unknown type_code {type_code}"

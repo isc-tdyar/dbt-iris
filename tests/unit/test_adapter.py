@@ -49,8 +49,9 @@ class TestIRISAdapter(unittest.TestCase):
             self._adapter = IRISAdapter(self.config, self.mp_context)
         return self._adapter
 
-    @mock.patch("dbt.adapters.iris.connections.dbapi")
-    def test_acquire_connection(self, connector):
+    @mock.patch("dbt.adapters.iris.connections._dbapi")
+    def test_acquire_connection(self, dbapi):
+        connector = dbapi.return_value
         connection = self.adapter.acquire_connection("dummy")
 
         connector.connect.assert_not_called()

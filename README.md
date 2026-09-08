@@ -65,6 +65,18 @@ Required parameters:
 - pass | password
 - schema
 
+### IRIS SQL notes
+
+- A `WITH` clause may not appear inside a derived table, and a `WITH` nested
+  inside another CTE's body fails to compile on the server. The adapter
+  rewrites both shapes automatically (hoisting and flattening CTEs), so
+  ephemeral models and models with their own CTEs work as tests, views, and
+  tables. Recursive CTEs are not yet supported by IRIS (DP-449898).
+- Multi-row `INSERT ... VALUES (...), (...)` is not IRIS SQL. Seeds are loaded
+  with `executemany`; write your own inserts as `INSERT ... SELECT ... UNION ALL`.
+- Incremental strategy support: `append` today. `merge` waits on IRIS `MERGE`
+  (DP-419256).
+
 ## Useful Links
 
 - [InterSystems Documentation](https://docs.intersystems.com/)

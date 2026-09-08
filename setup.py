@@ -44,6 +44,9 @@ setup(
         # add dbt-core to ensure backwards compatibility of installation, this is not a functional dependency
         "dbt-core>=1.8.0",
         "dbt-common>=1.0.4,<2.0",
+        # InterSystems DB-API driver. Replaces the intersystems_iris 3.x wheel that
+        # requirements-iris.txt used to download and bundle (that URL no longer resolves).
+        "intersystems-irispython>=5.4.0",
     ],
     classifiers=[
         "Development Status :: 5 - Production/Stable",
@@ -53,6 +56,7 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
     ],
-    python_requires=">3.7",
+    python_requires=">=3.8",
 )
