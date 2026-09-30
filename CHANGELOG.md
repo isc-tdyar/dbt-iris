@@ -26,3 +26,8 @@
 - Test fixtures that used multi-row `INSERT ... VALUES (...), (...)`, which
   IRIS does not accept, now use `INSERT ... SELECT ... UNION ALL`.
 - Unit tests for driver selection, row detachment, CTE hoisting and flattening.
+- The wheel ships only the `dbt` packages. 1.9.2 also carried `iris`,
+  `intersystems_iris` and `irisnative`, copied in at build time from the 3.x
+  driver, so installing dbt-iris replaced `intersystems-irispython`'s
+  `iris/__init__.py` and uninstalling it deleted that file. `requirements-iris.txt`
+  and the copy step in `scripts/build-dist.sh` are removed.

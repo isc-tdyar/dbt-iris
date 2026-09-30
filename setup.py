@@ -32,10 +32,6 @@ setup(
         include=[
             "dbt",
             "dbt.*",
-            "iris",
-            "intersystems_iris",
-            "intersystems_iris.*",
-            "irisnative",
         ]
     ),
     include_package_data=True,

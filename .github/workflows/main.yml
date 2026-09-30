@@ -146,7 +146,6 @@ jobs:
 
       - name: Build distributions
         run: |
-          pip install -r requirements-iris.txt
           ./scripts/build-dist.sh
 
       - name: Show distributions
