@@ -32,3 +32,8 @@
   driver, so installing dbt-iris replaced `intersystems-irispython`'s
   `iris/__init__.py` and uninstalling it deleted that file. `requirements-iris.txt`
   and the copy step in `scripts/build-dist.sh` are removed.
+- Python models check for `sqlalchemy_iris`, the package whose `iris+emb`
+  dialect they use, instead of `intersystems_iris`. `dbt.ref()` inside a Python
+  model now finds quoted relations such as `"schema"."table"`.
+- `TestPythonModelIRIS` runs when `DBT_IRIS_PYTHON_MODELS=1`; it needs pandas
+  and sqlalchemy-iris installed in the IRIS server's Python.
