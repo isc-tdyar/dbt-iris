@@ -5,9 +5,10 @@
 - Connect through `intersystems-irispython` (`iris.dbapi`) by default. The
   `intersystems_iris` 3.x driver previously downloaded by `requirements-iris.txt`
   and bundled into the wheel is no longer required; its download URL no longer
-  resolves. Models using a `WITH` clause now run: IRIS refuses CTE statements
-  from that driver's xDBC protocol version (SQLCODE -385, protocol 65 where 69
-  is required), which the 5.x driver satisfies.
+  resolves. The 3.x driver speaks xDBC protocol 65 and rewrites most CTEs into
+  subqueries on the client; IRIS refuses the CTEs it does not rewrite (SQLCODE
+  -385 for a CTE with a column list, protocol 65 where 69 is required; SQLCODE
+  -400 for `WITH RECURSIVE`). The 5.x driver speaks protocol 69.
 - Statements without bindings are executed as `cursor.execute(sql)`; the
   `intersystems-irispython` driver rejects an explicit `None`.
 - `SQLType` is resolved from whichever driver is installed.
@@ -24,3 +25,8 @@
 - Test fixtures that used multi-row `INSERT ... VALUES (...), (...)`, which
   IRIS does not accept, now use `INSERT ... SELECT ... UNION ALL`.
 - Unit tests for the connection, row detachment, CTE hoisting and flattening.
+- The wheel ships only the `dbt` packages. 1.9.2 also carried `iris`,
+  `intersystems_iris` and `irisnative`, copied in at build time from the 3.x
+  driver, so installing dbt-iris replaced `intersystems-irispython`'s
+  `iris/__init__.py` and uninstalling it deleted that file. `requirements-iris.txt`
+  and the copy step in `scripts/build-dist.sh` are removed.
