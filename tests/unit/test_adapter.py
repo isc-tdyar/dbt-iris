@@ -22,6 +22,8 @@ class TestIRISAdapter(unittest.TestCase):
                     "schema": "dbt",
                     "username": "dbt",
                     "password": "dbt",
+                    # load_dbapi is mocked below; keep DBT_IRIS_DRIVER from picking sqlalchemy
+                    "driver": "iris",
                 }
             },
             "target": "test",
