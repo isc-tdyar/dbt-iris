@@ -73,9 +73,10 @@ Optional parameters:
   - `sqlalchemy`: connect through the `sqlalchemy-intersystems-iris` dialect
     (`pip install dbt-iris[sqlalchemy]`). Uses the dialect's connection hooks and pooling.
   - `vendored`: the `intersystems_iris` 3.x pure-Python driver bundled in older wheels,
-    if it is installed. Kept for compatibility only. IRIS refuses CTE statements from its
-    xDBC protocol version (SQLCODE -385: protocol 65, where 69 is required), so models
-    that use a `WITH` clause cannot run on it.
+    if you install it yourself; the wheel no longer bundles it. Kept for compatibility
+    only. The driver rewrites most CTEs into subqueries, but IRIS refuses the ones it does not
+    rewrite, such as a CTE with a column list (SQLCODE -385: protocol 65, where 69 is
+    required) and `WITH RECURSIVE` (SQLCODE -400).
 
   The `DBT_IRIS_DRIVER` environment variable sets the same thing without editing the profile.
 

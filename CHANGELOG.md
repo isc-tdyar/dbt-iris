@@ -5,9 +5,10 @@
 - Connect through `intersystems-irispython` (`iris.dbapi`) by default. The
   `intersystems_iris` 3.x driver previously downloaded by `requirements-iris.txt`
   and bundled into the wheel is no longer required; its download URL no longer
-  resolves. Models using a `WITH` clause now run: IRIS refuses CTE statements
-  from that driver's xDBC protocol version (SQLCODE -385, protocol 65 where 69
-  is required), which the 5.x driver satisfies.
+  resolves. The 3.x driver speaks xDBC protocol 65 and rewrites most CTEs into
+  subqueries on the client; IRIS refuses the CTEs it does not rewrite (SQLCODE
+  -385 for a CTE with a column list, protocol 65 where 69 is required; SQLCODE
+  -400 for `WITH RECURSIVE`). The 5.x driver speaks protocol 69.
 - New profile field `driver` (or `DBT_IRIS_DRIVER` env var): `iris`,
   `sqlalchemy`, or `vendored`. `sqlalchemy` is an optional extra.
 - Statements without bindings are executed as `cursor.execute(sql)`; the
