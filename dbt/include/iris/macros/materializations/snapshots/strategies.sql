@@ -12,8 +12,13 @@
 
     {% elif check_cols_config is iterable and (check_cols_config | length) > 0 %}
         {#-- query for proper casing/quoting, to support comparison below --#}
+        {#-- IRIS rejects WITH inside a derived table; hoist the model's leading CTEs. --#}
+        {%- set parts = adapter.split_leading_ctes(node['compiled_code']) -%}
         {%- set select_check_cols_from_target -%}
-          select {{ check_cols_config | join(', ') }} from ({{ node['compiled_code'] }}) subq
+          {{ parts[0] }}
+          select {{ check_cols_config | join(', ') }} from (
+            {{ parts[1] }}
+          ) subq
         {%- endset -%}
         {% set query_columns = get_columns_in_query(select_check_cols_from_target) %}
 
