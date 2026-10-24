@@ -187,6 +187,24 @@ def flatten_nested_ctes(sql: str) -> str:
     return head + ",\n".join(f"{h} as ({b})" for h, b in flat) + "\n" + body.lstrip("\n")
 
 
+# Strings, quoted identifiers, comments and statement separators, so a ";" inside any of the
+# first four does not split.
+_STATEMENT_TOKENS = re.compile(
+    r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"|--[^\n]*|/\*.*?\*/|;", re.DOTALL
+)
+
+
+def split_statements(sql: str) -> List[str]:
+    """Split a script into statements; IRIS runs one statement per call."""
+    pieces, start = [], 0
+    for m in _STATEMENT_TOKENS.finditer(sql):
+        if m.group() == ";":
+            pieces.append(sql[start : m.start()])
+            start = m.end()
+    pieces.append(sql[start:])
+    return [p.strip() for p in pieces if p.strip()]
+
+
 class IRISAdapter(SQLAdapter):
     """
     Controls actual implmentation of adapter, and ability to override certain methods.
@@ -213,7 +231,8 @@ class IRISAdapter(SQLAdapter):
         # dbt's test utilities read them after this method returns. Copy them out.
         cursor = conn.handle.cursor()
         try:
-            cursor.execute(sql)
+            for statement in split_statements(sql):
+                cursor.execute(statement)
             if hasattr(conn.handle, "commit"):
                 conn.handle.commit()
             if fetch == "one":
