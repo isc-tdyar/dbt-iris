@@ -108,6 +108,11 @@ that works on any IRIS.
   models and models with their own CTEs work as tests, views and tables.
 - Multi-row `INSERT ... VALUES (...), (...)` is not IRIS SQL. Seeds are loaded with
   `executemany`; write your own inserts as `INSERT ... SELECT ... UNION ALL`.
+- Give every branch of a `UNION` the same type. When one branch is a `DATE` and another is text,
+  IRIS returns the right values from a plain query, but a table built from it (every `table` and
+  `incremental` model) stores the date's internal day number, for example `'66154'`.
+- `GROUP BY` on a string column returns the value in upper case (`'FEMALE'` for `'Female'`), the
+  IRIS default. Group by `%EXACT(col)` to keep the original case.
 - IRIS has no `ALTER VIEW ... RENAME`; the adapter recreates a view from its definition instead.
   IRIS has no materialized views: a `materialized_view` model is built as a table, rebuilt on
   every `dbt run`, with a warning.

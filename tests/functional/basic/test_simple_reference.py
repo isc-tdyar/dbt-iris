@@ -181,6 +181,14 @@ def project_config_update():
 
 # This test checks that with different materializations we get the right
 # tables copied or built.
+_GROUP_BY_CASE = pytest.mark.xfail(
+    strict=True,
+    reason="IRIS GROUP BY returns the uppercase collation value ('FEMALE') unless FastDistinct is "
+    "off or the column is wrapped in %EXACT; the expected seed has 'Female'",
+)
+
+
+@_GROUP_BY_CASE
 def test_simple_reference(project):
     results = run_dbt(["seed"])
     assert len(results) == 2
@@ -242,6 +250,7 @@ def test_simple_reference(project):
     )
 
 
+@_GROUP_BY_CASE
 def test_simple_reference_with_models_and_children(project):
     results = run_dbt(["seed"])
     assert len(results) == 2
