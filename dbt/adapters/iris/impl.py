@@ -1,4 +1,5 @@
 from typing import Optional, List, Tuple
+import base64
 import re
 import agate
 from dbt_common.exceptions import MacroArgTypeError
@@ -185,6 +186,22 @@ def flatten_nested_ctes(sql: str) -> str:
     # A recursive CTE hoisted out of an ephemeral model keeps its parent WITH recursive.
     head = "with recursive " if (recursive or inner_recursive) else "with "
     return head + ",\n".join(f"{h} as ({b})" for h, b in flat) + "\n" + body.lstrip("\n")
+
+
+def python_procedure_body(code: str, name: str) -> str:
+    """The body of the stored procedure that runs a Python model inside IRIS.
+
+    IRIS re-indents every line of a LANGUAGE PYTHON body, which changes multi-line strings, and
+    has trouble with comment lines. The model's code is therefore sent as one base64 line and run
+    with exec, so no line of it reaches IRIS's compiler.
+    """
+    encoded = base64.b64encode(code.encode("utf-8")).decode("ascii")
+    return (
+        "import base64\n"
+        f'exec(compile(base64.b64decode("{encoded}").decode("utf-8"), "{name}", "exec"), '
+        '{"__name__": "__dbt_python_model__"})\n'
+        'return "OK"'
+    )
 
 
 # Strings, quoted identifiers, comments and statement separators, so a ";" inside any of the
@@ -377,16 +394,13 @@ class IRISAdapter(SQLAdapter):
         schema = parsed_model["schema"]
         identifier = parsed_model["alias"]
 
-        # IRIS Has issues with Python's comments
-        compiled_code = re.sub(r"^[\s\t]*#.*$", "", compiled_code, flags=re.M)
-
         proc_name = f'"{schema}"."{identifier}__dbt_sp"'
         create_procedure = f"""
 CREATE OR REPLACE PROCEDURE {proc_name} ()
 RETURNS VARCHAR(10)
 LANGUAGE PYTHON
 {{
-{compiled_code}
+{python_procedure_body(compiled_code, f"{schema}.{identifier}")}
 }}
 """
 

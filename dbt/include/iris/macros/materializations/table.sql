@@ -102,5 +102,4 @@ session = IRISSession()
 dbt = dbtObj(session.table)
 df = model(dbt, session)
 session.to_sql(df, '{{ target_relation.identifier }}', '{{ target_relation.schema }}')
-return "OK"
 {% endmacro %}
