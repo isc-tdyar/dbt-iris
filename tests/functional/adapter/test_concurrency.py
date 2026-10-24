@@ -31,6 +31,12 @@ class TestConcurrency(BaseConcurrency):
     pass
 
 
+@pytest.mark.skipif(
+    os.environ.get("DBT_IRIS_OVERLAP_TEST") != "1",
+    reason="opt-in (DBT_IRIS_OVERLAP_TEST=1): overlapping replaces of one view can leave the IRIS "
+    "catalog damaged ('DDL not enabled for class') or the server refusing connections, which "
+    "breaks every later test; observed on 2026.1, 2026.2, 2026.3 and 2027.1.0RCTE.100.0",
+)
 class TestTwoProcessesAtOnce:
     @pytest.fixture(scope="class")
     def models(self):
