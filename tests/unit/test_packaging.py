@@ -68,6 +68,12 @@ class TestRelease200(unittest.TestCase):
     def test_no_driver_extras(self):
         self.assertFalse(_setup_call_kw("extras_require"))
 
+    def test_pypi_page_is_the_readme_in_markdown(self):
+        text = (ROOT / "setup.py").read_text()
+        self.assertIn('long_description_content_type="text/markdown"', text)
+        self.assertIn("README.md", text)
+        self.assertIn("README.md", (ROOT / "MANIFEST.in").read_text())
+
     def test_python_versions(self):
         self.assertEqual(_setup_call_kw("python_requires"), ">=3.10")
 

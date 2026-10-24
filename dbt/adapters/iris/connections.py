@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import importlib
 from typing import Optional, Tuple, Any, Type, Union
@@ -47,11 +48,17 @@ def check_driver(credentials) -> None:
 # lock". Those statements are retried with backoff.
 _LOCK_RETRIES = 10
 _LOCK_ERRORS = ("ERROR #5864", "ERROR #5803", "open for editing")
+# While another process drops and recompiles a view's class, DDL on it can also see the class
+# missing for a moment (IRIS 2026.2).
+_TRANSIENT_DDL_ERRORS = ("ERROR #5351",)
+_DDL = re.compile(r"^\s*(/\*.*?\*/\s*)*(create|drop|alter)\b", re.IGNORECASE | re.DOTALL)
 
 
-def _is_class_lock_conflict(exc: BaseException) -> bool:
+def _is_class_lock_conflict(exc: BaseException, sql: str = "") -> bool:
     text = str(exc)
-    return any(marker in text for marker in _LOCK_ERRORS)
+    if any(marker in text for marker in _LOCK_ERRORS):
+        return True
+    return bool(_DDL.match(sql)) and any(marker in text for marker in _TRANSIENT_DDL_ERRORS)
 
 
 def _server_key(connection):
@@ -231,7 +238,7 @@ class IRISConnectionManager(SQLConnectionManager):
                         cursor.execute(sql, bindings)
                     break
                 except Exception as e:
-                    if attempt == _LOCK_RETRIES or not _is_class_lock_conflict(e):
+                    if attempt == _LOCK_RETRIES or not _is_class_lock_conflict(e, sql):
                         raise
                     logger.debug(
                         f"dbt-iris: class lock held by another process, retry {attempt + 1}"

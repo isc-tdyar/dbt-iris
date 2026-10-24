@@ -8,17 +8,30 @@ dbt is the T in ELT. Organize, cleanse, denormalize, filter, rename, and pre-agg
 
 ## InterSystems IRIS
 
-[InterSystems IRIS](https://www.intersystems.com/data-platform/) is a data platform that provides advanced technologies for building and deploying data-intensive applications. It is a high-performance, multidimensional database that is optimized for complex data and real-time analytics. It is designed to support a wide range of data management, analysis, and integration tasks, and provides features such as a high-performance database engine, a powerful analytics engine, and support for building and deploying microservices. InterSystems IRIS is used by organizations in a variety of industries, including healthcare, finance, and government, to support their data-intensive applications and business processes.
+[InterSystems IRIS](https://www.intersystems.com/data-platform/) is a data platform with a
+high-performance multi-model database. `dbt-iris` is its dbt adapter.
 
-### Start InterSystems IRIS Locally with Docker Compose
+### Install
 
-docker-compose.yml
+```shell
+python -m pip install dbt-core dbt-iris
+```
+
+dbt-iris 2.0.0 needs dbt-core 1.10 or later and Python 3.10 or later. It connects through
+`iris.dbapi` from `intersystems-irispython`, which `pip` installs with it. It is tested against
+IRIS Community 2026.2 and 2026.3.
+
+Connection settings: [docs/dbt-docs-site/iris-setup.md](docs/dbt-docs-site/iris-setup.md).
+Configuration, strategies and limits: [docs/dbt-docs-site/iris-configs.md](docs/dbt-docs-site/iris-configs.md).
+
+### Start InterSystems IRIS locally with Docker Compose
+
+docker-compose.yml (in this repository; the Dockerfile adds the packages Python models need):
 
 ```yml
-version: '3'
 services:
   iris:
-    image: intersystemsdc/iris-community
+    build: .
     command:
       - -a
       # by default it starts with a requirement to change passwords for system users
@@ -28,60 +41,88 @@ services:
       - 52773:52773
 ```
 
-Ports:
-
-- 1972 - SuperPort - Binary protocol
-- 52773 - Internal WebServer, internal System Management Portal is available by [http://localhost:52773/csp/sys/UtilHome.csp](http://localhost:52773/csp/sys/UtilHome.csp)
-
 ```shell
-docker-compose up -d
+docker compose up -d
 ```
 
-_Default login and password `_SYSTEM` and `SYS`_
+Port 1972 is the superserver; the Management Portal is on
+[http://localhost:52773/csp/sys/UtilHome.csp](http://localhost:52773/csp/sys/UtilHome.csp).
+The default login is `_SYSTEM` / `SYS`.
 
 ### Configure dbt
 
-.dbt/profiles.yml
+`~/.dbt/profiles.yml`:
 
-```yml
-...
-    iris:
+```yaml
+my_project:
+  target: dev
+  outputs:
+    dev:
       type: iris
-      host: localhost
+      hostname: localhost
       port: 1972
-      user: _SYSTEM
-      pass: SYS
-      namespace: USER
+      database: USER      # the IRIS namespace; `namespace` also works
+      username: _SYSTEM
+      password: SYS
       schema: dbt
+      threads: 4
 ```
 
-Required parameters:
+`dbt init` prompts for the same settings. Since 2.0.0 there is no driver choice: the old
+`driver` setting accepts only `iris`, and `vendored` or `sqlalchemy` (in the profile or in
+`DBT_IRIS_DRIVER`) fails with a message.
 
-- type = iris
-- host | hostname | server
-- port
-- namespace | database
-- user | username
-- pass | password
-- schema
+### Incremental strategies
 
-The adapter connects through `iris.dbapi` from `intersystems-irispython`, installed as a
-dependency. Since 2.0.0 there is no driver choice: the old `driver` setting accepts only `iris`,
-and `vendored` or `sqlalchemy` (in the profile or in `DBT_IRIS_DRIVER`) fails with a message.
+- `append`: insert the new rows.
+- `merge`: `MERGE` when the server accepts it, otherwise an `UPDATE` of matched rows and an
+  `INSERT` of new ones. No index on `unique_key` is needed. `merge_update_columns`,
+  `merge_exclude_columns` and `incremental_predicates` are honoured.
+- `delete+insert`: the default when `unique_key` is set.
+- `microbatch`: replaces each batch's `event_time` window.
+
+`insert_overwrite` is not offered.
+
+### Snapshots
+
+Snapshots need no Embedded Python on the server: the adapter's `HASH` function is ObjectScript,
+and returns the same values as earlier releases.
+
+### Python models
+
+Python models run in IRIS's Embedded Python. Install `pandas`, `sqlalchemy` and
+`sqlalchemy-iris` into IRIS's Python on the server, as the Dockerfile does.
+
+### Recursive CTEs
+
+Models that use `WITH RECURSIVE` need an IRIS build that supports recursive CTEs. On a server
+that does not, such a model fails before it runs, with a message saying so.
 
 ### IRIS SQL notes
 
-- A `WITH` clause may not appear inside a derived table, and a `WITH` nested
-  inside another CTE's body fails to compile on the server. The adapter
-  rewrites both shapes automatically (hoisting and flattening CTEs), so
-  ephemeral models and models with their own CTEs work as tests, views, and
-  tables. Recursive CTEs are not yet supported by IRIS (DP-449898).
-- Multi-row `INSERT ... VALUES (...), (...)` is not IRIS SQL. Seeds are loaded
-  with `executemany`; write your own inserts as `INSERT ... SELECT ... UNION ALL`.
-- Incremental strategy support: `append` today. `merge` waits on IRIS `MERGE`
-  (DP-419256).
+- A `WITH` clause may not appear inside a derived table, and a `WITH` nested inside another
+  CTE's body fails to compile on the server. The adapter rewrites both shapes, so ephemeral
+  models and models with their own CTEs work as tests, views and tables.
+- Multi-row `INSERT ... VALUES (...), (...)` is not IRIS SQL. Seeds are loaded with
+  `executemany`; write your own inserts as `INSERT ... SELECT ... UNION ALL`.
+- IRIS has no `ALTER VIEW ... RENAME`; the adapter recreates a view from its definition instead.
+  Materialized views are not supported.
+
+### Running dbt more than once at a time
+
+Temporary, intermediate and backup tables carry the invocation id, so overlapping `dbt run`
+processes do not collide on them, and DDL that meets another process's lock is retried. Two
+runs replacing the same models at the same time can still block each other on IRIS class
+locks or catalog errors: dbt does not support overlapping runs of one project, and the losing
+run fails with an IRIS lock or catalog error.
+
+## What changed in 2.0.0
+
+See [CHANGELOG.md](CHANGELOG.md). In short: the bundled 3.x driver is gone, dbt-core 1.10 and
+Python 3.10 are required, `merge` and `delete+insert` are fixed for targets without a unique
+index and for integer keys, `microbatch` is new, and snapshots no longer need Embedded Python.
 
 ## Useful Links
 
 - [InterSystems Documentation](https://docs.intersystems.com/)
-- [InterSystems Developer Community](http://community.intersystems.com/)
+- [InterSystems Developer Community](https://community.intersystems.com/)

@@ -16,6 +16,26 @@
 
 ### Changes
 
+- `merge` runs as `UPDATE ... FROM` plus `INSERT ... WHERE NOT EXISTS` and needs no index on
+  `unique_key`; it honours `merge_update_columns`, `merge_exclude_columns` and
+  `incremental_predicates`, and switches to `MERGE` when the server accepts it. 1.9.x used
+  `INSERT OR UPDATE`, which duplicated rows on a target without a unique index.
+- `delete+insert` matches rows with a null-safe `EXISTS`. 1.9.x matched with
+  `IFNULL(key, '') IN (...)`, which deleted nothing for integer keys, so every run duplicated
+  rows.
+- New `microbatch` strategy. Event-time filters use IRIS timestamp literals.
+- `insert_overwrite` is removed; its macro was an upsert, not an overwrite.
+- The `HASH` function used by snapshots is ObjectScript, so snapshots need no Embedded Python.
+  It returns the same values as 1.9.x, including for the empty string.
+- Connect-time checks for `MERGE` and `WITH RECURSIVE`. A model that uses `WITH RECURSIVE` on a
+  server that does not accept it fails with a plain message. CTE flattening keeps
+  `WITH RECURSIVE` when it hoists a recursive ephemeral model.
+- Backup tables carry the invocation id like temporary tables, and DDL that meets another
+  process's class lock is retried (issue #3).
+- `profile_template.yml` for `dbt init`. CI runs the dbt-tests-adapter suites against IRIS
+  Community 2026.2 and 2026.3 on Python 3.10 to 3.12 and dbt-core 1.11 and 1.12, plus a Python
+  models job. The Dockerfile pins an image tag that exists (issue #7).
+
 - Connect through `intersystems-irispython` (`iris.dbapi`). The
   `intersystems_iris` 3.x driver previously downloaded by `requirements-iris.txt`
   and bundled into the wheel is no longer required; its download URL no longer

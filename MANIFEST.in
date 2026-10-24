@@ -1,1 +1,2 @@
 recursive-include dbt/include *.sql *.yml *.md
+include README.md

@@ -113,3 +113,26 @@ class TestTypeNames(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestClassLockRetry(unittest.TestCase):
+    def test_lock_errors_are_retryable(self):
+        from dbt.adapters.iris.connections import _is_class_lock_conflict
+
+        self.assertTrue(_is_class_lock_conflict(Exception("ERROR #5864: ... open for editing.")))
+        self.assertTrue(
+            _is_class_lock_conflict(Exception("ERROR #5803: Failed to acquire exclusive lock"))
+        )
+
+    def test_missing_class_is_retryable_only_for_ddl(self):
+        from dbt.adapters.iris.connections import _is_class_lock_conflict
+
+        missing = Exception("ERROR #5351: Class 'x.y' does not exist.")
+        self.assertTrue(
+            _is_class_lock_conflict(missing, "/* dbt */ create or replace view x as select 1")
+        )
+        self.assertTrue(_is_class_lock_conflict(missing, "drop table x"))
+        self.assertFalse(_is_class_lock_conflict(missing, "select * from x"))
+        self.assertFalse(
+            _is_class_lock_conflict(Exception("SQLCODE -30 table not found"), "drop table x")
+        )
