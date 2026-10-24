@@ -13,6 +13,8 @@ from dbt.adapters.sql import SQLConnectionManager
 from dbt_common.events.functions import fire_event
 from dbt.adapters.events.types import ConnectionUsed, SQLQuery, SQLQueryStatus
 from dbt_common.helper_types import Port
+
+from dbt.adapters.iris import capabilities
 from mashumaro.jsonschema.annotations import Maximum, Minimum
 from typing_extensions import Annotated
 
@@ -38,6 +40,23 @@ def check_driver(credentials) -> None:
         raise FailedToConnectError(_REMOVED.format(source=source, value=value))
     if getattr(credentials, "driver", None) == "iris":
         logger.debug("dbt-iris: the `driver` profile setting is no longer needed")
+
+
+# Another process compiling the same class (two dbt runs replacing one view or table at once)
+# makes DDL fail with ERROR #5864 "... open for editing" or #5803 "failed to acquire exclusive
+# lock". Those statements are retried with backoff.
+_LOCK_RETRIES = 10
+_LOCK_ERRORS = ("ERROR #5864", "ERROR #5803", "open for editing")
+
+
+def _is_class_lock_conflict(exc: BaseException) -> bool:
+    text = str(exc)
+    return any(marker in text for marker in _LOCK_ERRORS)
+
+
+def _server_key(connection):
+    c = connection.credentials
+    return (c.hostname, int(c.port), c.database)
 
 
 def _dbapi():
@@ -189,6 +208,12 @@ class IRISConnectionManager(SQLConnectionManager):
             if sql.endswith(";"):
                 sql = sql[0:-1]
 
+            capabilities.check_statement(
+                sql,
+                lambda name: capabilities.supports(
+                    _server_key(connection), connection.handle, name
+                ),
+            )
             cursor = connection.handle.cursor()
             many = (
                 bindings
@@ -196,12 +221,22 @@ class IRISConnectionManager(SQLConnectionManager):
                 and len(bindings) > 0
                 and (isinstance(bindings[0], list) or isinstance(bindings[0], tuple))
             )
-            if many:
-                cursor.executemany(sql, bindings)
-            elif bindings is None:
-                cursor.execute(sql)
-            else:
-                cursor.execute(sql, bindings)
+            for attempt in range(_LOCK_RETRIES + 1):
+                try:
+                    if many:
+                        cursor.executemany(sql, bindings)
+                    elif bindings is None:
+                        cursor.execute(sql)
+                    else:
+                        cursor.execute(sql, bindings)
+                    break
+                except Exception as e:
+                    if attempt == _LOCK_RETRIES or not _is_class_lock_conflict(e):
+                        raise
+                    logger.debug(
+                        f"dbt-iris: class lock held by another process, retry {attempt + 1}"
+                    )
+                    time.sleep(min(0.25 * (2**attempt), 4.0))
 
             fire_event(
                 SQLQueryStatus(

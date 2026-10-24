@@ -164,3 +164,18 @@ select name, id from my_other_cool_cte"""
         self.assertLess(low.find("my_cool_cte as ("), low.find("__dbt__cte__ephemeral as ("))
         self.assertNotIn("as (\nwith", low)
         self.assertTrue(out.rstrip().endswith("select name, id from my_other_cool_cte"))
+
+
+class TestFlattenKeepsRecursive(unittest.TestCase):
+    """An ephemeral model that is a recursive CTE, injected into its parent (spec 18 FR-16)."""
+
+    def test_inner_recursive_makes_the_outer_with_recursive(self):
+        from dbt.adapters.iris.impl import flatten_nested_ctes
+
+        sql = (
+            "with __dbt__cte__counter as (\nWITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r WHERE n < 3) "
+            "SELECT n FROM r\n) select n from __dbt__cte__counter where n > 1"
+        )
+        out = flatten_nested_ctes(sql)
+        self.assertTrue(out.lower().startswith("with recursive "), out)
+        self.assertIn("__dbt__cte__counter as (SELECT n FROM r)", out)
