@@ -109,7 +109,8 @@ that works on any IRIS.
 - Multi-row `INSERT ... VALUES (...), (...)` is not IRIS SQL. Seeds are loaded with
   `executemany`; write your own inserts as `INSERT ... SELECT ... UNION ALL`.
 - IRIS has no `ALTER VIEW ... RENAME`; the adapter recreates a view from its definition instead.
-  Materialized views are not supported.
+  IRIS has no materialized views: a `materialized_view` model is built as a table, rebuilt on
+  every `dbt run`, with a warning.
 
 ### Running dbt more than once at a time
 

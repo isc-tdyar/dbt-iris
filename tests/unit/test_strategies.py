@@ -31,5 +31,13 @@ class TestValidStrategies(unittest.TestCase):
         self.assertIn("LANGUAGE OBJECTSCRIPT", body.upper())
 
 
+class TestMaterializedView(unittest.TestCase):
+    def test_materialized_view_is_built_by_the_table_materialization(self):
+        text = (MACROS / "materializations" / "materialized_view.sql").read_text()
+        self.assertIn("materialization materialized_view, adapter='iris'", text)
+        self.assertIn("materialization_table_iris()", text)
+        self.assertIn("IRIS has no materialized views", text)
+
+
 if __name__ == "__main__":
     unittest.main()

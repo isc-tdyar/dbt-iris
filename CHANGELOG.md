@@ -32,6 +32,8 @@
   `WITH RECURSIVE` when it hoists a recursive ephemeral model.
 - Backup tables carry the invocation id like temporary tables, and DDL that meets another
   process's class lock is retried (issue #3).
+- `materialized_view` models are built as tables, rebuilt on every run, with a warning; IRIS has
+  no materialized views. Projects written for other warehouses run unchanged.
 - `profile_template.yml` for `dbt init`. CI runs the dbt-tests-adapter suites against IRIS
   Community 2026.2 and 2026.3 on Python 3.10 to 3.12 and dbt-core 1.11 and 1.12, plus a Python
   models job. The Dockerfile pins an image tag that exists (issue #7).
