@@ -12,7 +12,9 @@ id: "iris-configs"
 is a real SQL view. IRIS has no `ALTER VIEW ... RENAME`, so when dbt renames a view the adapter
 recreates it from its stored definition.
 
-Materialized views are not supported, because IRIS does not have them.
+IRIS has no materialized views, so a `materialized_view` model is built as a table, rebuilt on
+every `dbt run` and not refreshed in between, with a warning. Projects written for other
+warehouses run unchanged. `on_configuration_change` is accepted and ignored.
 
 ## Incremental strategies
 
