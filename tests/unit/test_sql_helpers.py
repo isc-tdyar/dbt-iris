@@ -68,7 +68,7 @@ class _Cur:
         self._rows = [_LiveRow(self, r) for r in rows]
 
     def execute(self, sql):
-        pass
+        self.executed = getattr(self, "executed", []) + [sql]
 
     def fetchone(self):
         return self._rows[0]
@@ -114,6 +114,32 @@ class TestRunSqlForTestsDetaches(unittest.TestCase):
         rows = IRISAdapter.run_sql_for_tests(None, "select 1", "all", conn)
         conn.handle.cur.close()
         self.assertEqual([tuple(r) for r in rows], [(1, "a"), (2, "b")])
+
+
+class TestRunSqlForTestsSplitsScripts(unittest.TestCase):
+    """dbt's test suites send setup scripts with several statements; IRIS runs one per call."""
+
+    def test_split_statements(self):
+        from dbt.adapters.iris.impl import split_statements
+
+        self.assertEqual(
+            split_statements("create table a (x int);\n insert into a select 1 ;  "),
+            ["create table a (x int)", "insert into a select 1"],
+        )
+        self.assertEqual(
+            split_statements("select 'a;b' as v; select 2"), ["select 'a;b' as v", "select 2"]
+        )
+        self.assertEqual(split_statements("-- one; two\nselect 1"), ["-- one; two\nselect 1"])
+        self.assertEqual(split_statements("/* a; b */ select 1"), ["/* a; b */ select 1"])
+        self.assertEqual(split_statements("select 1"), ["select 1"])
+
+    def test_each_statement_runs_and_the_last_one_is_fetched(self):
+        conn = _Conn([(1,)])
+        rows = IRISAdapter.run_sql_for_tests(
+            None, "create table a (x int); select x from a", "all", conn
+        )
+        self.assertEqual(conn.handle.cur.executed, ["create table a (x int)", "select x from a"])
+        self.assertEqual(rows, [(1,)])
 
 
 class TestFlattenNestedCtes(unittest.TestCase):
