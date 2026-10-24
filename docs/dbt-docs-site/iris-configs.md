@@ -16,12 +16,12 @@ Materialized views are not supported, because IRIS does not have them.
 
 ## Incremental strategies
 
-| Strategy        | How it runs on IRIS                                                                                                 |
-| --------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `append`        | `INSERT ... SELECT` of the new rows                                                                                  |
+| Strategy        | How it runs on IRIS                                                                                                                                                                                                                                                                |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `append`        | `INSERT ... SELECT` of the new rows                                                                                                                                                                                                                                                |
 | `merge`         | `MERGE` when the server accepts it; otherwise an `UPDATE ... FROM` of matched rows and an `INSERT ... WHERE NOT EXISTS` of new ones, in one transaction. No index on `unique_key` is needed. Supports `merge_update_columns`, `merge_exclude_columns` and `incremental_predicates` |
-| `delete+insert` | Deletes the target rows that match a source row on `unique_key`, then inserts. The default when `unique_key` is set |
-| `microbatch`    | Deletes the target rows in the batch's `event_time` window, then inserts the batch                                    |
+| `delete+insert` | Deletes the target rows that match a source row on `unique_key`, then inserts. The default when `unique_key` is set                                                                                                                                                                |
+| `microbatch`    | Deletes the target rows in the batch's `event_time` window, then inserts the batch                                                                                                                                                                                                 |
 
 A single-column `unique_key` matches NULL to NULL, as dbt's default merge does. Composite keys
 use plain equality.
@@ -29,11 +29,36 @@ use plain equality.
 ## Capability checks
 
 The adapter asks the server once per connection target whether it accepts `MERGE` and
-`WITH RECURSIVE`, and caches the answer.
+`WITH RECURSIVE`, and caches the answer. `merge` uses `MERGE` as soon as the server accepts it,
+with the same results.
 
-- A model whose SQL uses `WITH RECURSIVE` on a server that does not accept it fails before it
-  runs, with a message saying so. Recursive CTEs need an IRIS build that supports them.
-- `merge` uses `MERGE` as soon as the server accepts it, with the same results.
+## Recursive CTEs
+
+dbt never generates recursive SQL, so this only matters for a model you write with
+`WITH RECURSIVE` yourself, typically to walk a hierarchy. Recursive CTEs need an IRIS release
+that supports them. On a server that does not, the model fails before it runs, with a message
+naming the IRIS version.
+
+Until then, when the maximum depth is known, unroll the hierarchy into one join per level. This
+model returns every node below node 1 with its depth, up to `max_depth` levels, on any IRIS:
+
+```sql
+{{ config(materialized='table') }}
+{% set max_depth = 3 %}
+{% for depth in range(1, max_depth + 1) %}
+select e{{ depth }}.child as node, {{ depth }} as depth
+from {{ ref('edges') }} e1
+{% for level in range(2, depth + 1) %}
+join {{ ref('edges') }} e{{ level }} on e{{ level }}.parent = e{{ level - 1 }}.child
+{% endfor %}
+where e1.parent = 1
+{% if not loop.last %}union all{% endif %}
+{% endfor %}
+```
+
+It gives the same rows as the recursive form for hierarchies up to `max_depth` deep. Deeper
+nodes are left out, so set `max_depth` to at least the deepest level you have. For hierarchies of
+unknown depth, a Python model can walk the tree instead.
 
 ## Snapshots
 

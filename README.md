@@ -61,7 +61,7 @@ my_project:
       type: iris
       hostname: localhost
       port: 1972
-      database: USER      # the IRIS namespace; `namespace` also works
+      database: USER # the IRIS namespace; `namespace` also works
       username: _SYSTEM
       password: SYS
       schema: dbt
@@ -95,8 +95,11 @@ Python models run in IRIS's Embedded Python. Install `pandas`, `sqlalchemy` and
 
 ### Recursive CTEs
 
-Models that use `WITH RECURSIVE` need an IRIS build that supports recursive CTEs. On a server
-that does not, such a model fails before it runs, with a message saying so.
+dbt never generates recursive SQL, so this only matters for models you write with
+`WITH RECURSIVE` yourself. Those need an IRIS release that supports recursive CTEs; on a server
+that does not, the model fails before it runs, with a message naming the IRIS version. The
+[configs page](docs/dbt-docs-site/iris-configs.md#recursive-ctes) shows a fixed-depth pattern
+that works on any IRIS.
 
 ### IRIS SQL notes
 

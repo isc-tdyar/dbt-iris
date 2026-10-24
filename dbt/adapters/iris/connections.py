@@ -220,6 +220,7 @@ class IRISConnectionManager(SQLConnectionManager):
                 lambda name: capabilities.supports(
                     _server_key(connection), connection.handle, name
                 ),
+                lambda: capabilities.server_version(_server_key(connection), connection.handle),
             )
             cursor = connection.handle.cursor()
             many = (
