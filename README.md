@@ -115,7 +115,9 @@ that works on any IRIS.
   IRIS default. Group by `%EXACT(col)` to keep the original case.
 - IRIS has no `ALTER VIEW ... RENAME`; the adapter recreates a view from its definition instead.
   IRIS has no materialized views: a `materialized_view` model is built as a table, rebuilt on
-  every `dbt run`, with a warning.
+  every `dbt run`. Set `iris_materialized_view_as: view` to build it as a view, or `table` to
+  keep the table without the warning that lists the models left on the default. For a large
+  model that is rebuilt often, `incremental` is cheaper.
 
 ### Running dbt more than once at a time
 

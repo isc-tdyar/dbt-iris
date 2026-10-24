@@ -14,6 +14,7 @@ from dbt.adapters.iris import IRISConnectionManager
 from dbt.adapters.iris import IRISColumn
 from dbt.adapters.iris import IRISRelation
 from dbt.adapters.iris import capabilities
+from dbt.adapters.iris import materialized_view
 from dbt.adapters.iris.connections import _server_key
 
 LIST_SCHEMAS_MACRO_NAME = "list_schemas"
@@ -267,6 +268,19 @@ class IRISAdapter(SQLAdapter):
         """For macros that wrap model SQL in a derived table: flatten any nested
         CTEs, then return (cte_prefix, body) so the prefix can be hoisted."""
         return split_leading_ctes(flatten_nested_ctes(sql))
+
+    @available
+    def materialized_view_mode(self, value) -> str:
+        """'table' or 'view' for iris_materialized_view_as; anything else is a compile error."""
+        return materialized_view.resolve_mode(value)
+
+    @available
+    def materialized_view_warning(self, invocation_id, nodes, selected) -> str:
+        """The warning listing materialized_view models on the table default, once per run."""
+        names = materialized_view.models_on_default(nodes, selected)
+        if names and materialized_view.first_time(invocation_id):
+            return materialized_view.warning_text(names)
+        return ""
 
     def run_sql_for_tests(self, sql, fetch, conn):
         # intersystems-irispython 5.x DataRow objects are proxies onto the cursor;

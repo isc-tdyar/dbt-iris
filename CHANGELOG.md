@@ -32,8 +32,10 @@
   `WITH RECURSIVE` when it hoists a recursive ephemeral model.
 - Backup tables carry the invocation id like temporary tables, and DDL that meets another
   process's class lock is retried (issue #3).
-- `materialized_view` models are built as tables, rebuilt on every run, with a warning; IRIS has
-  no materialized views. Projects written for other warehouses run unchanged.
+- `materialized_view` models are built as tables, rebuilt on every run; IRIS has no materialized
+  views. Projects written for other warehouses run unchanged. `iris_materialized_view_as: view`
+  builds them as views instead, and `table` silences the warning that lists the models left on
+  the default.
 - Python models run through `exec` of their base64-encoded code inside the IRIS stored
   procedure. IRIS re-indents every line of a `LANGUAGE PYTHON` body, which added tabs to the
   continuation lines of multi-line strings, and 1.9.x deleted every line starting with `#`,
