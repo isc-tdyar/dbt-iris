@@ -34,6 +34,10 @@
   process's class lock is retried (issue #3).
 - `materialized_view` models are built as tables, rebuilt on every run, with a warning; IRIS has
   no materialized views. Projects written for other warehouses run unchanged.
+- Python models run through `exec` of their base64-encoded code inside the IRIS stored
+  procedure. IRIS re-indents every line of a `LANGUAGE PYTHON` body, which added tabs to the
+  continuation lines of multi-line strings, and 1.9.x deleted every line starting with `#`,
+  including lines inside strings, to work around comment trouble.
 - `profile_template.yml` for `dbt init`. CI runs the dbt-tests-adapter suites against IRIS
   Community 2026.2 and 2026.3 on Python 3.10 to 3.12 and dbt-core 1.11 and 1.12, plus a Python
   models job. The Dockerfile pins an image tag that exists (issue #7).
