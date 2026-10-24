@@ -12,6 +12,8 @@ from dbt.adapters.events.logging import AdapterLogger
 from dbt.adapters.iris import IRISConnectionManager
 from dbt.adapters.iris import IRISColumn
 from dbt.adapters.iris import IRISRelation
+from dbt.adapters.iris import capabilities
+from dbt.adapters.iris.connections import _server_key
 
 LIST_SCHEMAS_MACRO_NAME = "list_schemas"
 LIST_RELATIONS_MACRO_NAME = "list_relations_without_caching"
@@ -380,9 +382,6 @@ LANGUAGE PYTHON
     @available
     def supports_merge(self) -> bool:
         """Whether the connected server accepts MERGE INTO (asked once per server)."""
-        from dbt.adapters.iris import capabilities
-        from dbt.adapters.iris.connections import _server_key
-
         connection = self.connections.get_thread_connection()
         return capabilities.supports(_server_key(connection), connection.handle, "merge")
 

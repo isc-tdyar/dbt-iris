@@ -36,10 +36,10 @@
 {#- Quoted the way get_quoted_csv quotes dest_columns; dbt's get_merge_update_columns uses the
     column class's quote character, which IRIS does not accept. -#}
 {% macro iris__merge_update_columns(merge_update_columns, merge_exclude_columns, dest_columns) -%}
-    {%- set names = [] -%}
     {%- if merge_update_columns -%}
-        {%- for name in merge_update_columns -%}{%- do names.append(name) -%}{%- endfor -%}
+        {%- set names = merge_update_columns | list -%}
     {%- else -%}
+        {%- set names = [] -%}
         {%- set excluded = (merge_exclude_columns or []) | map("lower") | list -%}
         {%- for column in dest_columns -%}
             {%- if column.name | lower not in excluded -%}{%- do names.append(column.name) -%}{%- endif -%}
@@ -54,7 +54,7 @@
 {% macro iris__get_update_insert_merge_sql(target, source, unique_key, dest_columns, incremental_predicates=none) -%}
     {%- set dest_cols_csv = get_quoted_csv(dest_columns | map(attribute="name")) -%}
     {%- set sql_header = config.get('sql_header', none) -%}
-    {%- set predicates = [] if incremental_predicates is none else [] + incremental_predicates -%}
+    {%- set predicates = [] + (incremental_predicates or []) -%}
 
     {%- if unique_key -%}
         {%- set merge_update_columns = config.get('merge_update_columns') -%}
@@ -74,19 +74,16 @@
             {% endset %}
             {% do adapter.add_query(update_sql, auto_begin=False) %}
         {%- endif %}
-
-    {{ sql_header if sql_header is not none }}
-    insert into {{ target }} ({{ dest_cols_csv }})
-    select {{ dest_cols_csv }} from {{ source }} as DBT_INTERNAL_SOURCE
-    where not exists (
-        select 1 from {{ target }} as DBT_INTERNAL_DEST
-        where {{ match }}
-    )
-    {%- else %}
+    {%- endif %}
 
     {{ sql_header if sql_header is not none }}
     insert into {{ target }} ({{ dest_cols_csv }})
     select {{ dest_cols_csv }} from {{ source }}
+    {%- if unique_key %} as DBT_INTERNAL_SOURCE
+    where not exists (
+        select 1 from {{ target }} as DBT_INTERNAL_DEST
+        where {{ match }}
+    )
     {%- endif %}
 
 {%- endmacro %}

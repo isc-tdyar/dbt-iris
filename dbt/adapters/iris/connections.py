@@ -32,14 +32,14 @@ _REMOVED = (
 
 
 def check_driver(credentials) -> None:
+    profile_driver = getattr(credentials, "driver", None)
     for source, value in (
-        ("profile setting driver =", getattr(credentials, "driver", None)),
+        ("profile setting driver =", profile_driver),
         (f"environment variable {DRIVER_ENV} =", os.environ.get(DRIVER_ENV)),
     ):
-        if value is None or value == "iris":
-            continue
-        raise FailedToConnectError(_REMOVED.format(source=source, value=value))
-    if getattr(credentials, "driver", None) == "iris":
+        if value is not None and value != "iris":
+            raise FailedToConnectError(_REMOVED.format(source=source, value=value))
+    if profile_driver == "iris":
         logger.debug("dbt-iris: the `driver` profile setting is no longer needed")
 
 

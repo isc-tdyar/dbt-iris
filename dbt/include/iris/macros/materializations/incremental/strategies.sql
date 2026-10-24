@@ -34,7 +34,7 @@
   {%- set target = arg_dict["target_relation"] -%}
   {%- set source = arg_dict["temp_relation"] -%}
   {%- set dest_columns = arg_dict["dest_columns"] -%}
-  {%- set predicates = [] if arg_dict.get("incremental_predicates") is none else [] + arg_dict.get("incremental_predicates") -%}
+  {%- set predicates = [] + (arg_dict.get("incremental_predicates") or []) -%}
   {%- set event_time = model.config.event_time -%}
   {%- if model.batch and model.batch.event_time_start -%}
     {%- do predicates.append(event_time ~ " >= cast('" ~ model.batch.event_time_start.strftime("%Y-%m-%d %H:%M:%S") ~ "' as timestamp)") -%}
