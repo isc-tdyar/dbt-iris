@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from typing import TypeVar, Optional, ClassVar, Dict, Any
-from dbt_common.exceptions import DbtRuntimeError
 from dbt.adapters.base.column import Column
 
 Self = TypeVar("Self", bound="IRISColumn")
