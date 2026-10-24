@@ -156,11 +156,15 @@ def flatten_nested_ctes(sql: str) -> str:
         return sql
     recursive, ctes, _, body = parsed
 
+    inner_recursive = []
+
     def expand(header, cte_body):
         inner = _SqlScanner(cte_body).parse_leading_with()
         if inner is None:
             return [(header, cte_body)]
-        _, inner_ctes, _, inner_body = inner
+        is_recursive, inner_ctes, _, inner_body = inner
+        if is_recursive:
+            inner_recursive.append(header)
         out = []
         for h, b in inner_ctes:
             out.extend(expand(h, b))
@@ -176,7 +180,8 @@ def flatten_nested_ctes(sql: str) -> str:
         flat.extend(expanded)
     if not changed:
         return sql
-    head = "with recursive " if recursive else "with "
+    # A recursive CTE hoisted out of an ephemeral model keeps its parent WITH recursive.
+    head = "with recursive " if (recursive or inner_recursive) else "with "
     return head + ",\n".join(f"{h} as ({b})" for h, b in flat) + "\n" + body.lstrip("\n")
 
 
@@ -370,7 +375,16 @@ LANGUAGE PYTHON
         return response
 
     def valid_incremental_strategies(self) -> List[str]:
-        return ["append", "merge", "delete+insert"]
+        return ["append", "merge", "delete+insert", "microbatch"]
+
+    @available
+    def supports_merge(self) -> bool:
+        """Whether the connected server accepts MERGE INTO (asked once per server)."""
+        from dbt.adapters.iris import capabilities
+        from dbt.adapters.iris.connections import _server_key
+
+        connection = self.connections.get_thread_connection()
+        return capabilities.supports(_server_key(connection), connection.handle, "merge")
 
     def drop_relation(self, relation: BaseRelation):
         # if relation.type == "table":

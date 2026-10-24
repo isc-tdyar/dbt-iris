@@ -22,15 +22,33 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
   {# no-op #}
 {% endmacro %}
 
+{#
+  hash(alg, str): the hex digest of str's UTF-8 bytes, in lower case, as hashlib.new(alg,
+  str.encode()).hexdigest() gives it in 1.9.x. Written in ObjectScript so that snapshots need no
+  Embedded Python on the server. A NULL input gives NULL. SQL's empty string reaches the function
+  as $Char(0), and is hashed as that byte, exactly as the 1.9.x Python function did, so existing
+  dbt_scd_id values stay valid.
+#}
 {% macro create_function_hash() -%}
   {% call statement('_', auto_begin=False) -%}
     CREATE OR REPLACE FUNCTION HASH(alg VARCHAR(''), str VARCHAR(''))
     PROCEDURE
     RETURNS VARCHAR(1024)
-    LANGUAGE PYTHON
+    LANGUAGE OBJECTSCRIPT
     {
-      import hashlib
-      return hashlib.new(alg, str.encode()).hexdigest()
+      If str = "" Quit ""
+      Set tBytes = $ZConvert(str, "O", "UTF8")
+      Set tAlg = $ZConvert(alg, "L")
+      If tAlg = "md5" {
+        Set tDigest = $System.Encryption.MD5Hash(tBytes)
+      } ElseIf tAlg = "sha1" {
+        Set tDigest = $System.Encryption.SHA1Hash(tBytes)
+      } ElseIf tAlg = "sha256" {
+        Set tDigest = $System.Encryption.SHAHash(256, tBytes)
+      } Else {
+        Throw ##class(%Exception.General).%New("dbt-iris HASH: unsupported algorithm " _ alg)
+      }
+      Quit $ZConvert(##class(%xsd.hexBinary).LogicalToXSD(tDigest), "L")
     }
   {%- endcall %}
 {% endmacro %}
