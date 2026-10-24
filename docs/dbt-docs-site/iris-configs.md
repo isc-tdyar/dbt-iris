@@ -12,9 +12,27 @@ id: "iris-configs"
 is a real SQL view. IRIS has no `ALTER VIEW ... RENAME`, so when dbt renames a view the adapter
 recreates it from its stored definition.
 
-IRIS has no materialized views, so a `materialized_view` model is built as a table, rebuilt on
-every `dbt run` and not refreshed in between, with a warning. Projects written for other
+IRIS has no materialized views. A `materialized_view` model is built as a table by default,
+rebuilt on every `dbt run` and not refreshed in between, so projects written for other
 warehouses run unchanged. `on_configuration_change` is accepted and ignored.
+
+| `iris_materialized_view_as` | Built as                                                                            |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| not set                     | A table, with one warning per run listing the `materialized_view` models left unset |
+| `table`                     | A table, without the warning                                                        |
+| `view`                      | A view, which always shows the current source rows and stores nothing               |
+
+Any other value fails the model before it runs. Set it per model or for a folder:
+
+```yaml
+models:
+  my_project:
+    marts:
+      +iris_materialized_view_as: view
+```
+
+Rebuilding the table costs about as much as running the query and writing every row again on
+each run. For a large model, `incremental` avoids the full rebuild.
 
 ## Incremental strategies
 
