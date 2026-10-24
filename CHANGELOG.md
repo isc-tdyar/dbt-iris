@@ -1,8 +1,17 @@
 # Changelog
 
-## Unreleased
+## 2.0.0
 
-- Connect through `intersystems-irispython` (`iris.dbapi`) by default. The
+### Breaking changes
+
+- The bundled `intersystems_iris` 3.x driver is removed. The adapter connects
+  only through `intersystems-irispython` 5.4 or later (`iris.dbapi`).
+- Requires dbt-core 1.10 or later (dbt-adapters 1.15.2 or later) and Python 3.10
+  or later.
+
+### Changes
+
+- Connect through `intersystems-irispython` (`iris.dbapi`). The
   `intersystems_iris` 3.x driver previously downloaded by `requirements-iris.txt`
   and bundled into the wheel is no longer required; its download URL no longer
   resolves. The 3.x driver speaks xDBC protocol 65 and rewrites most CTEs into
@@ -11,7 +20,6 @@
   -400 for `WITH RECURSIVE`). The 5.x driver speaks protocol 69.
 - Statements without bindings are executed as `cursor.execute(sql)`; the
   `intersystems-irispython` driver rejects an explicit `None`.
-- `SQLType` is resolved from whichever driver is installed.
 - Result rows are copied out of the cursor before dbt reads them. The compiled
   driver returns `DataRow` proxies that become inaccessible once the cursor is
   closed; dbt's test utilities read results after that point.

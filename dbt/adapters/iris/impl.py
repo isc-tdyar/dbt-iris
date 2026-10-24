@@ -276,7 +276,7 @@ class IRISAdapter(SQLAdapter):
         exists = True if schema in [row[0] for row in results] else False
         return exists
 
-    def list_relations_without_caching(self, schema_relation: IRISRelation) -> List[IRISRelation]:  # type: ignore
+    def list_relations_without_caching(self, schema_relation: IRISRelation) -> List[IRISRelation]:
         kwargs = {"schema_relation": schema_relation}
         try:
             results = self.execute_macro(LIST_RELATIONS_MACRO_NAME, kwargs=kwargs)

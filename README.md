@@ -65,6 +65,9 @@ Required parameters:
 - pass | password
 - schema
 
+The adapter connects through `iris.dbapi` from `intersystems-irispython`, installed as a
+dependency. There is no driver setting.
+
 ### IRIS SQL notes
 
 - A `WITH` clause may not appear inside a derived table, and a `WITH` nested
