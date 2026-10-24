@@ -1,6 +1,5 @@
 import pytest
 import os
-from testcontainers.iris import IRISContainer
 
 from tests.functional.projects import dbt_integration
 
@@ -37,6 +36,9 @@ def pytest_configure(config):
     if not image:
         return
 
+    # testcontainers is only needed with --container; it also pins an older driver.
+    from testcontainers.iris import IRISContainer
+
     print("Starting IRIS container:", image)
     iris = IRISContainer(
         image,
@@ -59,23 +61,3 @@ def pytest_unconfigure(config):
     if config.iris and config.iris._container:
         print("Stopping IRIS container", config.iris)
         config.iris.stop()
-
-
-# The intersystems_iris 3.x driver speaks xDBC protocol 65. It rewrites most CTEs into
-# subqueries on the client, but IRIS 2026 refuses the ones it does not rewrite (SQLCODE
-# -385 for a CTE with a column list: "CTE statements over xDBC are only supported by
-# newer versions of the xDBC driver ... protocol '69' is required"). The ephemeral-model
-# tests use CTE shapes that fail on it.
-_CTE_DEPENDENT = ("Ephemeral",)
-
-
-def pytest_collection_modifyitems(config, items):
-    if os.getenv("DBT_IRIS_DRIVER") != "vendored":
-        return
-    skip = pytest.mark.skip(
-        reason="vendored intersystems_iris 3.x driver (xDBC protocol 65) cannot run the CTE shapes "
-        "these tests use; IRIS requires protocol 69 (SQLCODE -385)"
-    )
-    for item in items:
-        if any(tag in item.nodeid for tag in _CTE_DEPENDENT):
-            item.add_marker(skip)

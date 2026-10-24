@@ -1,8 +1,7 @@
-# install latest changes in dbt-core
-dbt-common @ git+https://github.com/dbt-labs/dbt-common.git
-dbt-tests-adapter @ git+https://github.com/dbt-labs/dbt-adapters.git#subdirectory=dbt-tests-adapter
-dbt-core @ git+https://github.com/dbt-labs/dbt-core.git#egg=dbt-core&subdirectory=core
-dbt-adapters @ git+https://github.com/dbt-labs/dbt-adapters.git#subdirectory=dbt-adapters
+dbt-core>=1.10.0
+dbt-adapters>=1.15.2,<2.0
+dbt-common>=1.22.0,<2.0
+dbt-tests-adapter>=1.15.0
 
 black>=24.3
 bumpversion~=0.6.0

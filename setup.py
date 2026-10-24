@@ -36,28 +36,20 @@ setup(
     ),
     include_package_data=True,
     install_requires=[
-        "dbt-adapters>=1.1.1,<2.0",
+        "dbt-adapters>=1.15.2,<2.0",
         # add dbt-core to ensure backwards compatibility of installation, this is not a functional dependency
-        "dbt-core>=1.8.0",
-        "dbt-common>=1.0.4,<2.0",
-        # InterSystems DB-API driver. Replaces the intersystems_iris 3.x wheel that
-        # requirements-iris.txt used to download and bundle (that URL no longer resolves).
-        # The bundled copy, if present, is still used when the profile sets `driver: vendored`.
+        "dbt-core>=1.10.0",
+        "dbt-common>=1.22.0,<2.0",
+        # The InterSystems DB-API driver; the only driver since 2.0.0.
         "intersystems-irispython>=5.4.0",
     ],
-    extras_require={
-        # Optional: connect through the InterSystems SQLAlchemy dialect (`driver: sqlalchemy`).
-        "sqlalchemy": ["sqlalchemy>=2.0,<3", "sqlalchemy-intersystems-iris>=1.0.2"],
-    },
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.10",
 )

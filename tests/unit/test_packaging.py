@@ -36,5 +36,55 @@ class TestWheelContents(unittest.TestCase):
             self.assertNotIn("requirements-iris.txt", (ROOT / path).read_text(), path)
 
 
+def _setup_call_kw(name):
+    tree = ast.parse((ROOT / "setup.py").read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "setup":
+            for kw in node.keywords:
+                if kw.arg == name:
+                    return ast.literal_eval(kw.value)
+    return None
+
+
+class TestRelease200(unittest.TestCase):
+    def test_version_is_2_0_0(self):
+        attrs = {}
+        exec((ROOT / "dbt/adapters/iris/__version__.py").read_text(), attrs)
+        self.assertEqual(attrs["version"], "2.0.0")
+
+    def test_install_requires(self):
+        self.assertEqual(
+            sorted(_setup_call_kw("install_requires")),
+            sorted(
+                [
+                    "dbt-adapters>=1.15.2,<2.0",
+                    "dbt-common>=1.22.0,<2.0",
+                    "dbt-core>=1.10.0",
+                    "intersystems-irispython>=5.4.0",
+                ]
+            ),
+        )
+
+    def test_no_driver_extras(self):
+        self.assertFalse(_setup_call_kw("extras_require"))
+
+    def test_python_versions(self):
+        self.assertEqual(_setup_call_kw("python_requires"), ">=3.10")
+
+    def test_requirements_dev_installs_from_releases(self):
+        text = (ROOT / "requirements-dev.txt").read_text()
+        self.assertNotIn("git+", text)
+        for name in ("dbt-core", "dbt-tests-adapter"):
+            self.assertIn(name, text)
+
+    def test_changelog_has_the_release_and_its_breaking_changes(self):
+        text = (ROOT / "CHANGELOG.md").read_text()
+        self.assertIn("## 2.0.0", text)
+        section = text.split("## 2.0.0", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("Breaking", section)
+        self.assertIn("vendored", section)
+        self.assertIn("dbt-core 1.10", section)
+
+
 if __name__ == "__main__":
     unittest.main()

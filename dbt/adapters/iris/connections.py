@@ -1,7 +1,7 @@
 import os
 import time
 import importlib
-from typing import Optional, Tuple, Any, Type, Dict, Union
+from typing import Optional, Tuple, Any, Type, Union
 from contextlib import contextmanager
 from dataclasses import dataclass
 from dbt.exceptions import DbtRuntimeError
@@ -18,64 +18,30 @@ from typing_extensions import Annotated
 
 logger = AdapterLogger("iris")
 
-# ---------------------------------------------------------------------------
-# Driver selection
-#
-#   vendored    the intersystems_iris 3.x pure-Python DB-API bundled in the wheel
-#   iris        `iris.dbapi` from intersystems-irispython (optionally with the
-#               intersystems-iris DX layer installed on top; same import path)
-#   sqlalchemy  connect through the sqlalchemy-intersystems-iris dialect and use
-#               engine.raw_connection(); exercises the dialect's on_connect hooks
-#
-# Resolution order: profile `driver:` field, DBT_IRIS_DRIVER env var, auto.
-# Auto prefers `iris` when importable and falls back to `vendored`.
-# ---------------------------------------------------------------------------
+# dbt-iris 2.0.0 connects only through `iris.dbapi` from intersystems-irispython.
+# The bundled 3.x driver and the `driver` choice were removed. `driver: iris` (in the
+# profile or DBT_IRIS_DRIVER) is still accepted so existing profiles keep working.
 DRIVER_ENV = "DBT_IRIS_DRIVER"
-DRIVERS = ("vendored", "iris", "sqlalchemy")
+_REMOVED = (
+    "dbt-iris: the {source} {value!r} was removed in dbt-iris 2.0.0. The adapter now connects "
+    "only through intersystems-irispython (iris.dbapi); remove the setting or set it to 'iris'."
+)
 
 
-def resolve_driver(credentials) -> str:
-    name = getattr(credentials, "driver", None) or os.environ.get(DRIVER_ENV)
-    if name is None:
-        try:
-            importlib.import_module("iris.dbapi")
-            name = "iris"
-        except Exception:
-            name = "vendored"
-    if name not in DRIVERS:
-        raise ValueError(f"dbt-iris: unknown driver {name!r}, expected one of {DRIVERS}")
-    return name
-
-
-def load_dbapi(name: str):
-    if name == "iris":
-        return importlib.import_module("iris.dbapi")
-    if name == "vendored":
-        return importlib.import_module("intersystems_iris.dbapi._DBAPI")
-    return None  # sqlalchemy: engine built in open()
-
-
-def _sqltype():
-    """SQLType enum from whichever driver is available (same member names)."""
-    for mod, attr in (("iris.dbapi", "SQLType"), ("intersystems_iris.dbapi._SQLType", "SQLType")):
-        try:
-            return getattr(importlib.import_module(mod), attr)
-        except Exception:
+def check_driver(credentials) -> None:
+    for source, value in (
+        ("profile setting driver =", getattr(credentials, "driver", None)),
+        (f"environment variable {DRIVER_ENV} =", os.environ.get(DRIVER_ENV)),
+    ):
+        if value is None or value == "iris":
             continue
-    raise ImportError("dbt-iris: no DB-API driver providing SQLType is installed")
+        raise FailedToConnectError(_REMOVED.format(source=source, value=value))
+    if getattr(credentials, "driver", None) == "iris":
+        logger.debug("dbt-iris: the `driver` profile setting is no longer needed")
 
 
-_ENGINES: Dict[str, Any] = {}
-
-
-def _sqlalchemy_engine(url: str):
-    engine = _ENGINES.get(url)
-    if engine is None:
-        from sqlalchemy import create_engine
-
-        engine = create_engine(url)
-        _ENGINES[url] = engine
-    return engine
+def _dbapi():
+    return importlib.import_module("iris.dbapi")
 
 
 @dataclass
@@ -85,7 +51,7 @@ class IRISCredentials(Credentials):
     password: str
     port: Annotated[Port, Minimum(0), Maximum(65535)]
     application_name: Optional[str] = "dbt"
-    driver: Optional[str] = None  # vendored | iris | sqlalchemy; see DRIVER_ENV
+    driver: Optional[str] = None  # accepted only as "iris"; see check_driver
 
     _ALIASES = {
         "namespace": "database",
@@ -119,7 +85,6 @@ class IRISCredentials(Credentials):
             "username",
             "schema",
             "application_name",
-            "driver",
         )
 
 
@@ -161,23 +126,9 @@ class IRISConnectionManager(SQLConnectionManager):
         kwargs["username"] = credentials.username
         kwargs["password"] = credentials.password
 
-        driver = resolve_driver(credentials)
-        logger.debug(f"dbt-iris driver: {driver}")
-
+        check_driver(credentials)
         try:
-            if driver == "sqlalchemy":
-                url = "iris://{u}:{p}@{h}:{port}/{ns}".format(
-                    u=credentials.username,
-                    p=credentials.password,
-                    h=credentials.hostname,
-                    port=credentials.port,
-                    ns=credentials.database,
-                )
-                connection.handle = _sqlalchemy_engine(url).raw_connection()
-            else:
-                if driver == "vendored":
-                    kwargs["application_name"] = credentials.application_name
-                connection.handle = load_dbapi(driver).connect(**kwargs)
+            connection.handle = _dbapi().connect(**kwargs)
             connection.state = "open"
         except Exception as e:
             raise FailedToConnectError(str(e))
@@ -270,5 +221,5 @@ class IRISConnectionManager(SQLConnectionManager):
     @classmethod
     def data_type_code_to_name(cls, type_code: Union[int, str]) -> str:
         if isinstance(type_code, int):
-            return _sqltype()(type_code).name
+            return _dbapi().SQLType(type_code).name
         return f"unknown type_code {type_code}"

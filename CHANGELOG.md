@@ -1,19 +1,30 @@
 # Changelog
 
-## Unreleased
+## 2.0.0
 
-- Connect through `intersystems-irispython` (`iris.dbapi`) by default. The
+### Breaking changes
+
+- The bundled `intersystems_iris` 3.x driver is removed, and so is the `driver`
+  choice. The adapter connects only through `intersystems-irispython` 5.4 or
+  later (`iris.dbapi`). A profile or `DBT_IRIS_DRIVER` that names `vendored` or
+  `sqlalchemy` now fails with a message saying so; `driver: iris` is still
+  accepted and does nothing.
+- Requires dbt-core 1.10 or later (dbt-adapters 1.15.2 or later) and Python 3.10
+  or later.
+- The `sqlalchemy` extra is removed. Python models still use `sqlalchemy-iris`
+  inside the IRIS server's Python.
+
+### Changes
+
+- Connect through `intersystems-irispython` (`iris.dbapi`). The
   `intersystems_iris` 3.x driver previously downloaded by `requirements-iris.txt`
   and bundled into the wheel is no longer required; its download URL no longer
   resolves. The 3.x driver speaks xDBC protocol 65 and rewrites most CTEs into
   subqueries on the client; IRIS refuses the CTEs it does not rewrite (SQLCODE
   -385 for a CTE with a column list, protocol 65 where 69 is required; SQLCODE
   -400 for `WITH RECURSIVE`). The 5.x driver speaks protocol 69.
-- New profile field `driver` (or `DBT_IRIS_DRIVER` env var): `iris`,
-  `sqlalchemy`, or `vendored`. `sqlalchemy` is an optional extra.
 - Statements without bindings are executed as `cursor.execute(sql)`; the
   `intersystems-irispython` driver rejects an explicit `None`.
-- `SQLType` is resolved from whichever driver is installed.
 - Result rows are copied out of the cursor before dbt reads them. The compiled
   driver returns `DataRow` proxies that become inaccessible once the cursor is
   closed; dbt's test utilities read results after that point.
@@ -26,7 +37,7 @@
   equivalent rewriting client-side.
 - Test fixtures that used multi-row `INSERT ... VALUES (...), (...)`, which
   IRIS does not accept, now use `INSERT ... SELECT ... UNION ALL`.
-- Unit tests for driver selection, row detachment, CTE hoisting and flattening.
+- Unit tests for the driver, row detachment, CTE hoisting and flattening.
 - The wheel ships only the `dbt` packages. 1.9.2 also carried `iris`,
   `intersystems_iris` and `irisnative`, copied in at build time from the 3.x
   driver, so installing dbt-iris replaced `intersystems-irispython`'s
