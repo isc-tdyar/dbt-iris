@@ -35,9 +35,12 @@ _RECURSIVE = re.compile(r"\bwith\s+recursive\b", re.IGNORECASE)
 _LITERALS_AND_COMMENTS = re.compile(r"'(?:[^']|'')*'|--[^\n]*|/\*.*?\*/", re.DOTALL)
 
 RECURSIVE_REFUSED = (
-    "This IRIS server does not accept WITH RECURSIVE (recursive common table expressions). "
-    "The model uses one, so it needs an IRIS build with recursive CTE support."
+    "This IRIS server{version} does not accept WITH RECURSIVE (recursive common table "
+    "expressions), and this model uses one. Rewrite the model without recursion (see "
+    '"Recursive CTEs" in the dbt-iris docs for a pattern), or run it on an IRIS release that '
+    "supports recursive CTEs."
 )
+_ZVERSION = re.compile(r"\)\s+(\d{4}\.\d[\w.]*\s+\(Build\s+\w+\))")
 
 
 def sqlcode(exc: BaseException) -> Optional[int]:
@@ -93,6 +96,7 @@ _lock = threading.Lock()
 def clear_cache() -> None:
     with _lock:
         _cache.clear()
+        _versions.clear()
 
 
 def supports(key: ServerKey, handle, name: str) -> bool:
@@ -107,11 +111,45 @@ def supports(key: ServerKey, handle, name: str) -> bool:
     return result
 
 
+def parse_zversion(zversion: str) -> Optional[str]:
+    """'IRIS for UNIX (...) 2026.2 (Build 221U) Fri ...' -> '2026.2 (Build 221U)'."""
+    m = _ZVERSION.search(zversion or "")
+    return m.group(1) if m else None
+
+
+_versions: Dict[ServerKey, str] = {}
+
+
+def server_version(key: ServerKey, handle) -> Optional[str]:
+    """The server's version for messages, read once per server; None if it cannot be read."""
+    with _lock:
+        if key in _versions:
+            return _versions[key]
+    try:
+        cursor = handle.cursor()
+        try:
+            cursor.execute("SELECT $ZVERSION")
+            version = parse_zversion(cursor.fetchone()[0])
+        finally:
+            cursor.close()
+    except Exception:
+        return None
+    if version is not None:
+        with _lock:
+            _versions[key] = version
+    return version
+
+
 def uses_recursive_cte(sql: str) -> bool:
     return bool(_RECURSIVE.search(_LITERALS_AND_COMMENTS.sub(" ", sql)))
 
 
-def check_statement(sql: str, ask: Callable[[str], bool]) -> None:
+def check_statement(
+    sql: str, ask: Callable[[str], bool], describe: Optional[Callable[[], Optional[str]]] = None
+) -> None:
     """Refuse a statement the server cannot run, before sending it."""
     if uses_recursive_cte(sql) and not ask("recursive_cte"):
-        raise DbtRuntimeError(RECURSIVE_REFUSED)
+        version = describe() if describe else None
+        raise DbtRuntimeError(
+            RECURSIVE_REFUSED.format(version=f" (IRIS {version})" if version else "")
+        )

@@ -116,6 +116,73 @@ class TestProbeErrorsThatAreNotAnswers(unittest.TestCase):
         self.assertTrue(caps.supports(key, _Handle({}), "recursive_cte"))
 
 
+class TestServerVersionInTheMessage(unittest.TestCase):
+    def setUp(self):
+        caps.clear_cache()
+
+    def test_parse_zversion(self):
+        self.assertEqual(
+            caps.parse_zversion(
+                "IRIS for UNIX (Ubuntu Server LTS for ARM64 Containers) 2026.2 (Build 221U) Fri Jun 26 2026 09:59:12 EDT"
+            ),
+            "2026.2 (Build 221U)",
+        )
+        self.assertEqual(
+            caps.parse_zversion(
+                "IRIS for UNIX (Ubuntu Server LTS for x86-64) 2027.1.0RCTE (Build 100U) Wed Oct 21 2026"
+            ),
+            "2027.1.0RCTE (Build 100U)",
+        )
+        self.assertIsNone(caps.parse_zversion("something else"))
+
+    def test_version_is_read_once_per_server(self):
+        handle = _VersionHandle("IRIS for UNIX (x) 2026.2 (Build 221U) Fri")
+        key = ("h", 1972, "USER")
+        self.assertEqual(caps.server_version(key, handle), "2026.2 (Build 221U)")
+        self.assertEqual(caps.server_version(key, handle), "2026.2 (Build 221U)")
+        self.assertEqual(handle.queries, 1)
+
+    def test_version_failure_gives_none(self):
+        self.assertIsNone(
+            caps.server_version(("h", 1, "U"), _Handle({"ZVERSION": Exception("lost")}))
+        )
+
+    def test_refusal_names_the_version_and_the_way_out(self):
+        sql = "WITH RECURSIVE r(n) AS (select 1 union all select n+1 from r where n<3) select n from r"
+        with self.assertRaises(DbtRuntimeError) as ctx:
+            caps.check_statement(sql, lambda name: False, lambda: "2026.2 (Build 221U)")
+        msg = str(ctx.exception)
+        self.assertIn("IRIS 2026.2 (Build 221U)", msg)
+        self.assertIn("Recursive CTEs", msg)
+        self.assertIn("without recursion", msg)
+
+    def test_refusal_without_a_version(self):
+        sql = "WITH RECURSIVE r(n) AS (select 1) select n from r"
+        with self.assertRaises(DbtRuntimeError) as ctx:
+            caps.check_statement(sql, lambda name: False, lambda: None)
+        self.assertIn("This IRIS server does not accept WITH RECURSIVE", str(ctx.exception))
+
+
+class _VersionHandle:
+    def __init__(self, zversion):
+        self.zversion, self.queries = zversion, 0
+
+    def cursor(self):
+        handle = self
+
+        class _C:
+            def execute(self, sql, *a):
+                handle.queries += 1
+
+            def fetchone(self):
+                return (handle.zversion,)
+
+            def close(self):
+                pass
+
+        return _C()
+
+
 class TestRecursiveCheck(unittest.TestCase):
     SQL = "create table x as WITH RECURSIVE r(n) AS (select 1 union all select n+1 from r where n<3) select n from r"
 
