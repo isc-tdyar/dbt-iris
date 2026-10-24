@@ -113,8 +113,10 @@ that does not, such a model fails before it runs, with a message saying so.
 Temporary, intermediate and backup tables carry the invocation id, so overlapping `dbt run`
 processes do not collide on them, and DDL that meets another process's lock is retried. Two
 runs replacing the same models at the same time can still block each other on IRIS class
-locks or catalog errors: dbt does not support overlapping runs of one project, and the losing
-run fails with an IRIS lock or catalog error.
+locks or catalog errors, and on every IRIS build tried this has also left a view's class
+damaged ("DDL not enabled for class") or the server refusing connections. dbt does not support
+overlapping runs of one project: do not start a second `dbt run` on the same models while one
+is running.
 
 ## What changed in 2.0.0
 
