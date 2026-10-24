@@ -30,7 +30,9 @@ RECURSIVE_PROBE = (
 _SYNTAX_SQLCODES = {-1, -25, -51}
 _SQLCODE = re.compile(r"SQLCODE:\s*<(-?\d+)>")
 _RECURSIVE = re.compile(r"\bwith\s+recursive\b", re.IGNORECASE)
-_STRING_LITERAL = re.compile(r"'(?:[^']|'')*'")
+# String literals, -- line comments and /* block */ comments, in one pass so that a comment
+# marker inside a string (or a quote inside a comment) is read correctly.
+_LITERALS_AND_COMMENTS = re.compile(r"'(?:[^']|'')*'|--[^\n]*|/\*.*?\*/", re.DOTALL)
 
 RECURSIVE_REFUSED = (
     "This IRIS server does not accept WITH RECURSIVE (recursive common table expressions). "
@@ -56,18 +58,27 @@ def _run(handle, sql: str, fetch: bool) -> None:
             pass
 
 
+# A probe error without an SQLCODE (connection lost, timeout) says nothing about the server, so
+# the probes raise it instead of answering, and supports() does not cache it.
+
+
 def probe_merge(handle) -> bool:
     try:
         _run(handle, MERGE_PROBE, fetch=False)
     except Exception as e:
-        return sqlcode(e) not in _SYNTAX_SQLCODES
+        code = sqlcode(e)
+        if code is None:
+            raise
+        return code not in _SYNTAX_SQLCODES
     return True
 
 
 def probe_recursive_cte(handle) -> bool:
     try:
         _run(handle, RECURSIVE_PROBE, fetch=True)
-    except Exception:
+    except Exception as e:
+        if sqlcode(e) is None:
+            raise
         return False
     return True
 
@@ -97,7 +108,7 @@ def supports(key: ServerKey, handle, name: str) -> bool:
 
 
 def uses_recursive_cte(sql: str) -> bool:
-    return bool(_RECURSIVE.search(_STRING_LITERAL.sub("''", sql)))
+    return bool(_RECURSIVE.search(_LITERALS_AND_COMMENTS.sub(" ", sql)))
 
 
 def check_statement(sql: str, ask: Callable[[str], bool]) -> None:

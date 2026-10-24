@@ -90,6 +90,32 @@ class TestCache(unittest.TestCase):
             caps.supports(("h", 1, "U"), _Handle({}), "time_travel")
 
 
+class TestProbeErrorsThatAreNotAnswers(unittest.TestCase):
+    """A probe that fails for a reason other than SQL (connection lost, timeout) says nothing
+    about the server, so it is raised and not cached as "unsupported"."""
+
+    LOST = Exception(
+        "<COMMUNICATION LINK ERROR> Failed to receive message; Details: Communication timed out"
+    )
+
+    def setUp(self):
+        caps.clear_cache()
+
+    def test_recursive_probe_raises_without_an_sqlcode(self):
+        with self.assertRaises(Exception):
+            caps.probe_recursive_cte(_Handle({"RECURSIVE": self.LOST}))
+
+    def test_merge_probe_raises_without_an_sqlcode(self):
+        with self.assertRaises(Exception):
+            caps.probe_merge(_Handle({"MERGE": self.LOST}))
+
+    def test_a_lost_connection_is_not_cached(self):
+        key = ("h", 1972, "USER")
+        with self.assertRaises(Exception):
+            caps.supports(key, _Handle({"RECURSIVE": self.LOST}), "recursive_cte")
+        self.assertTrue(caps.supports(key, _Handle({}), "recursive_cte"))
+
+
 class TestRecursiveCheck(unittest.TestCase):
     SQL = "create table x as WITH RECURSIVE r(n) AS (select 1 union all select n+1 from r where n<3) select n from r"
 
@@ -110,6 +136,22 @@ class TestRecursiveCheck(unittest.TestCase):
 
         caps.check_statement("with a as (select 1 as n) select n from a", ask)
         caps.check_statement("select 'with recursive' as label", ask)
+
+    def test_comments_do_not_count(self):
+        self.assertFalse(caps.uses_recursive_cte("-- with recursive is not used here\nselect 1"))
+        self.assertFalse(caps.uses_recursive_cte("/* with recursive */ select 1"))
+        self.assertFalse(caps.uses_recursive_cte("/* a\nwith recursive\nb */ select 1"))
+        self.assertTrue(
+            caps.uses_recursive_cte(
+                '/* {"app": "dbt"} */ WITH RECURSIVE r(n) AS (select 1) select n from r'
+            )
+        )
+
+    def test_comment_mention_never_asks(self):
+        def ask(name):
+            raise AssertionError("should not probe")
+
+        caps.check_statement("-- WITH RECURSIVE would be nice\nselect 1", ask)
 
     def test_case_and_whitespace(self):
         self.assertTrue(caps.uses_recursive_cte("WITH\n  recursive r AS (select 1) select 1"))
