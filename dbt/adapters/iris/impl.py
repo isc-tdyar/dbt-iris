@@ -129,6 +129,31 @@ class _SqlScanner:
             return recursive, ctes, close, sql[close:]
 
 
+_STRING_TYPES = {
+    "varchar",
+    "char",
+    "character",
+    "character varying",
+    "nvarchar",
+    "nchar",
+    "string",
+}
+_STREAM_TYPES = {"longvarchar", "longvarbinary", "text", "ntext", "clob", "blob", "image"}
+_TEMPORAL_TYPES = {"date", "time", "timestamp", "datetime", "smalldatetime", "posixtime"}
+_MAX_STRING = 3641144  # IRIS's longest string; a stream is compared on this many characters
+
+
+def _comparable(quoted: str, dtype: str) -> str:
+    """A column expression whose value EXCEPT compares the way other databases do."""
+    if dtype in _STREAM_TYPES:
+        return f"%EXACT(SUBSTRING({quoted}, 1, {_MAX_STRING}))"
+    if dtype in _STRING_TYPES:
+        return f"%EXACT({quoted})"
+    if dtype in _TEMPORAL_TYPES:
+        return f"%EXACT(CAST({quoted} AS VARCHAR(64)))"
+    return quoted
+
+
 def split_leading_ctes(sql: str) -> Tuple[str, str]:
     """Split ``WITH a AS (...), b AS (...) <body>`` into (cte_prefix, body).
 
@@ -353,8 +378,28 @@ class IRISAdapter(SQLAdapter):
         column_names: Optional[List[str]] = None,
         except_operator: str = "EXCEPT",
     ) -> str:
-        # TODO: IRIS does not support WITH and EXCEPT, no idea how to implement it, yet
-        return "SELECT 0,0"
+        """Row-count difference and number of rows in one relation but not the other, both
+        directions, as dbt's test helper check_relations_equal expects.
+
+        A bare EXCEPT on IRIS compares strings under SQLUPPER (case and trailing spaces
+        ignored), never matches a stream column, and compares a DATE with a VARCHAR by the
+        DATE's internal value. So each column is normalised by its own type on each side:
+        strings exact, streams by content, dates and times as their ODBC text."""
+        columns_a = self.get_columns_in_relation(relation_a)
+        columns_b = self.get_columns_in_relation(relation_b)
+        names = column_names or [c.name for c in columns_a]
+
+        def select_list(columns) -> str:
+            types = {c.name.lower(): (c.dtype or "").lower() for c in columns}
+            return ", ".join(_comparable(self.quote(n), types.get(n.lower(), "")) for n in names)
+
+        a, b, op = relation_a, relation_b, except_operator
+        cols_a, cols_b = select_list(columns_a), select_list(columns_b)
+        return (
+            f"select (select count(*) from {a}) - (select count(*) from {b}), "
+            f"(select count(*) from (select {cols_a} from {a} {op} select {cols_b} from {b}) x) + "
+            f"(select count(*) from (select {cols_b} from {b} {op} select {cols_a} from {a}) y)"
+        )
 
     def get_missing_columns(
         self, from_relation: IRISRelation, to_relation: IRISRelation
