@@ -19,7 +19,13 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
 {% endmacro %}
 
 {% macro iris__create_schema(schema_relation) -%}
-  {# no-op #}
+  {#
+    IRIS creates a schema with its first table, so there is nothing to create here. dbt runs
+    create_schema before any model, which makes it the place to install HASH() for snapshots.
+    IRISAdapter.create_schema does the same in Python; adapters that run this macro directly
+    (dbt Fusion) need it here.
+  #}
+  {{ create_function_hash() }}
 {% endmacro %}
 
 {#
@@ -53,14 +59,22 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
   {%- endcall %}
 {% endmacro %}
 
-{% macro iris__drop_schema(relation) -%}
-'''drops a schema in a target database.'''
-  {# no-op #}
-{% endmacro %}
+{#
+  drop_schema: dbt's default__drop_schema (drop schema if exists ... cascade), which IRIS accepts
+  from 2026.1. IRISAdapter.drop_schema drops each relation in Python instead; adapters that run
+  the macro directly (dbt Fusion) use the default.
 
-{% macro iris__check_schema_exists(database, schema) -%}
-'''Checks if schema name exists and returns number or times it shows up.'''
-  {# no-op #}
+  check_schema_exists: IRISAdapter.check_schema_exists reads list_schemas in Python; this is the
+  same answer for adapters that run the macro directly. An IRIS schema is not in a catalog, and
+  its name matches in any case.
+#}
+{% macro iris__check_schema_exists(information_schema, schema) -%}
+  {% set sql -%}
+    select count(*)
+    from information_schema.schemata
+    where upper(schema_name) = upper('{{ schema | replace("'", "''") }}')
+  {%- endset %}
+  {{ return(run_query(sql)) }}
 {% endmacro %}
 
 {% macro iris__alter_column_type(relation, column_name, new_column_type) -%}
