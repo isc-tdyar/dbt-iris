@@ -28,14 +28,16 @@ connects through.
 | `intersystems-irispython` | 5.4 or later    | 5.4.1                                          |
 | InterSystems IRIS         | 2026.1 or later | 2026.1, 2026.2 and 2026.3 (preview), see below |
 
-dbt's adapter test suites pass on each of these IRIS builds. The tests that fail because of an
-IRIS issue are marked as expected failures, and the issues are:
+dbt's adapter test suites pass in full on each of these IRIS builds:
 
-| IRIS             | Build tested  | Known IRIS issues                                                                                                                                                                                      |
-| ---------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 2026.1           | 2026.1.0.234  | [`UNION` of a `DATE` and text](#iris-sql-notes); [`GROUP BY` case](#iris-sql-notes)                                                                                                                    |
-| 2026.2           | 2026.2.0.221  | The same two                                                                                                                                                                                           |
-| 2026.3 (preview) | 2026.3.0L.196 | The same two, and a query on a table another connection has just altered with `ADD COLUMN` can fail with "Invalid number of parameters"; in dbt this shows up in snapshots whose source gains a column |
+| IRIS             | Build tested  |
+| ---------------- | ------------- |
+| 2026.1           | 2026.1.0.234  |
+| 2026.2           | 2026.2.0.221  |
+| 2026.3 (preview) | 2026.3.0L.196 |
+
+Where IRIS SQL behaves differently from other warehouses, [IRIS SQL notes](#iris-sql-notes) says
+how, and what to write instead.
 
 None of these releases accepts recursive CTEs; see [Recursive CTEs](#recursive-ctes).
 
@@ -87,8 +89,10 @@ my_project:
 `dbt init` asks for the same settings, and `dbt debug` checks the connection. Every setting and
 its aliases are listed on the [setup page](docs/dbt-docs-site/iris-setup.md).
 
-The user needs the SQL privileges to create tables and views in `schema`, and to create the
-`HASH` SQL function the adapter installs for snapshots.
+The user needs the SQL privileges to create tables and views in `schema`. Snapshots also need a
+`HASH` SQL function, written in ObjectScript, that the adapter installs when it creates a schema.
+IRIS refuses `CREATE FUNCTION` with code to a user who has only SQL privileges; the `%Developer`
+role is enough. Without it, dbt warns and runs everything except snapshots.
 
 ### How dbt names map to IRIS
 
@@ -109,6 +113,22 @@ The user needs the SQL privileges to create tables and views in `schema`, and to
 
 `insert_overwrite` is not offered. The [configs page](docs/dbt-docs-site/iris-configs.md) says
 how each strategy runs on IRIS.
+
+## Seeds
+
+Seed string columns follow the IRIS default and compare without regard to case. Set
+`iris_collation: exact` to make them keep their case in `GROUP BY` and compare case-sensitively,
+as on other warehouses. Tables and views built from the seed inherit it.
+
+```yaml
+seeds:
+  my_project:
+    +iris_collation: exact
+```
+
+One IRIS issue comes with it: a view that groups by an `exact` column fails with SQLCODE -400 when
+it is used in `EXCEPT` or in a correlated `NOT EXISTS`, on every IRIS build tested. dbt's own data
+tests do not use either.
 
 ## Snapshots
 
@@ -141,8 +161,10 @@ that works on any IRIS.
   is a `DATE` and another is text, a plain query returns the right values, but a table built from
   it (every `table` and `incremental` model) stores the date's internal day number, for example
   `'66154'`.
-- **`GROUP BY` case.** `GROUP BY` on a string column returns the value in upper case (`'FEMALE'`
-  for `'Female'`), the IRIS default. Group by `%EXACT(col)` to keep the original case.
+- **Case in strings.** IRIS string columns compare without regard to case by default:
+  `'female' = 'Female'` is true, and `GROUP BY` returns the upper-case form (`'FEMALE'`). Group by
+  `%EXACT(col)` to keep the original case, or set `iris_collation: exact` on seeds (see
+  [Seeds](#seeds)).
 - **Renaming views.** IRIS has no `ALTER VIEW ... RENAME`; the adapter recreates the view from its
   definition instead.
 - **Materialized views.** IRIS has none. A `materialized_view` model is built as a table, rebuilt

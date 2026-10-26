@@ -20,7 +20,6 @@ from typing_extensions import Annotated
 
 logger = AdapterLogger("iris")
 
-
 # Another process compiling the same class (two dbt runs replacing one view or table at once)
 # makes DDL fail with ERROR #5864 "... open for editing" or #5803 "failed to acquire exclusive
 # lock". Those statements are retried with backoff.
@@ -45,8 +44,18 @@ def _server_key(connection):
 
 
 def _dbapi():
-    """`iris.dbapi` from intersystems-irispython, the only driver the adapter uses."""
     return importlib.import_module("iris.dbapi")
+
+
+def connect(credentials):
+    """A new driver connection for the profile's credentials."""
+    return _dbapi().connect(
+        hostname=credentials.hostname,
+        port=credentials.port,
+        namespace=credentials.database,
+        username=credentials.username,
+        password=credentials.password,
+    )
 
 
 @dataclass
@@ -121,17 +130,8 @@ class IRISConnectionManager(SQLConnectionManager):
             logger.debug("Connection is already open, skipping open.")
             return connection
 
-        credentials = connection.credentials
-        kwargs = {}
-
-        kwargs["hostname"] = credentials.hostname
-        kwargs["port"] = credentials.port
-        kwargs["namespace"] = credentials.database
-        kwargs["username"] = credentials.username
-        kwargs["password"] = credentials.password
-
         try:
-            connection.handle = _dbapi().connect(**kwargs)
+            connection.handle = connect(connection.credentials)
             connection.state = "open"
         except Exception as e:
             raise FailedToConnectError(str(e))
