@@ -82,8 +82,11 @@ unknown depth, a Python model can walk the tree instead.
 
 ## Snapshots
 
-Snapshots use a `HASH` SQL function written in ObjectScript, so they need no Embedded Python on
-the server. It returns the same values as earlier dbt-iris releases, so existing snapshot history
+Snapshots support the `check` and `timestamp` strategies, a multi-column `unique_key`,
+`snapshot_meta_column_names`, `dbt_valid_to_current` and all three `hard_deletes` modes.
+
+They use a `HASH` SQL function written in ObjectScript, so they need no Embedded Python on the
+server. It returns the same values as earlier dbt-iris releases, so existing snapshot history
 stays valid.
 
 ## Python models
@@ -110,6 +113,5 @@ The adapter rewrites these where dbt generates them:
 Temporary, intermediate and backup tables carry the invocation id, so overlapping `dbt run`
 processes do not collide on them, and DDL that meets another process's lock is retried. Two
 runs that replace the same models at the same time can still block each other on IRIS class
-locks, and on every IRIS build tried this has also left a view's class damaged or the server
-refusing connections. dbt does not support overlapping runs of one project: do not start a
+locks, and can damage the IRIS catalog. dbt does not support overlapping runs of one project: do not start a
 second `dbt run` on the same models while one is running.
