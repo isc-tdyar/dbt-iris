@@ -62,6 +62,9 @@ step and, for some incremental models, one full refresh: see
 ### New
 
 - `microbatch` incremental strategy.
+- A `table` or `incremental` model whose `UNION` gives a column a `DATE` or `TIME` in one branch
+  and another type in another fails with a message naming the column. IRIS would store the
+  values as internal numbers (`'66154'` for 2022-02-14) without an error.
 - `iris_collation: exact` for seeds: string columns keep their case in `GROUP BY` and compare
   case-sensitively, as on other warehouses. The default is unchanged.
 - `merge` honours `merge_update_columns`, `merge_exclude_columns` and `incremental_predicates`,

@@ -16,6 +16,7 @@ from dbt.adapters.events.types import ConnectionUsed, SQLQuery, SQLQueryStatus
 from dbt_common.helper_types import Port
 
 from dbt.adapters.iris import capabilities
+from dbt.adapters.iris import union_types
 from mashumaro.jsonschema.annotations import Maximum, Minimum
 from typing_extensions import Annotated
 
@@ -68,6 +69,20 @@ def _server_key(connection):
 
 def _dbapi():
     return importlib.import_module("iris.dbapi")
+
+
+def _describe(handle, sql: str):
+    """The cursor description of a zero-row query, or None if IRIS cannot run it."""
+    try:
+        cursor = handle.cursor()
+        try:
+            cursor.execute(sql)
+            return cursor.description
+        finally:
+            cursor.close()
+    except Exception as e:
+        logger.debug(f"dbt-iris: could not describe a UNION branch: {e}")
+        return None
 
 
 def connect(credentials):
@@ -224,6 +239,8 @@ class IRISConnectionManager(SQLConnectionManager):
                 ),
                 lambda: capabilities.server_version(_server_key(connection), connection.handle),
             )
+            if bindings is None:
+                union_types.check(sql, lambda q: _describe(connection.handle, q))
             cursor = connection.handle.cursor()
             many = (
                 bindings
