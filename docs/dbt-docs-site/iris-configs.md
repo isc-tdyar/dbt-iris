@@ -130,6 +130,16 @@ The adapter rewrites these where dbt generates them:
 - Multi-row `INSERT ... VALUES (...), (...)`. Seeds use `executemany`; in your own SQL write
   `INSERT ... SELECT ... UNION ALL`.
 
+The adapter refuses this one, because IRIS accepts it and stores wrong values:
+
+- A `UNION` that gives a column a `DATE` or `TIME` in one branch and text, a number or the other
+  of the two in another. A table built from it holds the date's internal day number
+  (`'66154'` for 2022-02-14) or the time's seconds (`'36672'`), with no error. Before it builds a
+  `table` or `incremental` model, the adapter reads each branch's column types and fails the model
+  with a message naming the column. Cast the column to one type in every branch. A `NULL` branch
+  is fine. The check does not see `POSIXTIME` columns, or a `UNION` whose branches cannot run on
+  their own, such as one inside a correlated subquery.
+
 ## Running dbt more than once at a time
 
 Temporary, intermediate and backup tables carry the invocation id, so overlapping `dbt run`

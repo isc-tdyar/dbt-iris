@@ -157,10 +157,13 @@ that works on any IRIS.
   and models with their own CTEs work as tests, views and tables.
 - **Multi-row `VALUES`.** `INSERT ... VALUES (...), (...)` is not IRIS SQL. Seeds are loaded
   with `executemany`; write your own inserts as `INSERT ... SELECT ... UNION ALL`.
-- **`UNION` of a `DATE` and text.** Give every branch of a `UNION` the same type. When one branch
-  is a `DATE` and another is text, a plain query returns the right values, but a table built from
-  it (every `table` and `incremental` model) stores the date's internal day number, for example
-  `'66154'`.
+- **`UNION` of a `DATE` or `TIME` and another type.** Give every branch of a `UNION` the same
+  type. When one branch has a `DATE` and another has text or a number in the same column, a plain
+  query returns the right values, but IRIS stores the date's internal day number (`'66154'`) in a
+  table built from it, and a `TIME` as seconds (`'36672'`). The adapter checks each `UNION` branch
+  before it builds a `table` or `incremental` model, and fails the model with a message naming
+  the column instead. It cannot see a `POSIXTIME` column, or a `UNION` whose branches cannot
+  run on their own, such as one inside a correlated subquery.
 - **Case in strings.** IRIS string columns compare without regard to case by default:
   `'female' = 'Female'` is true, and `GROUP BY` returns the upper-case form (`'FEMALE'`). Group by
   `%EXACT(col)` to keep the original case, or set `iris_collation: exact` on seeds (see
