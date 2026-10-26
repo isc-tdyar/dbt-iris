@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from dbt.tests.adapter.incremental.test_incremental_merge_exclude_columns import (
     BaseMergeExcludeColumns,
@@ -6,6 +8,7 @@ from dbt.tests.adapter.incremental.test_incremental_on_schema_change import (
     BaseIncrementalOnSchemaChange,
 )
 from dbt.tests.adapter.incremental.test_incremental_predicates import BaseIncrementalPredicates
+from dbt.tests.adapter.incremental import test_incremental_unique_id as unique_id
 from dbt.tests.adapter.incremental.test_incremental_unique_id import BaseIncrementalUniqueKey
 
 
@@ -21,31 +24,53 @@ class TestIncrementalPredicatesDeleteInsert(BaseIncrementalPredicates):
     pass
 
 
-# dbt's expected tables for these four mix cast('2022-02-14' as date) with text dates in one
+# dbt's expected tables for these tests mix cast('2022-02-14' as date) with text dates in one
 # UNION ALL. IRIS returns the right text from a plain SELECT of that union, but CREATE TABLE AS and
-# INSERT ... SELECT store the date's internal day number ('66154'), so the expected table is wrong.
-# The incremental models themselves are correct. Measured on 2026.2, 2026.3.0L.196 and
-# 2027.1.0RCTE.100 (irispython-dx dxlab/rows_diff_probe3.py).
-_UNION_DATE = pytest.mark.xfail(
-    strict=True,
-    reason="IRIS stores a DATE's internal value when CREATE TABLE AS / INSERT SELECT a mixed "
-    "DATE and VARCHAR UNION ALL; dbt's expected table is built that way",
-)
+# INSERT ... SELECT store the date's internal day number ('66154'). The fixture below casts every
+# branch to DATE, which is what the README tells users to do; TestUnionOfDateAndText records the
+# IRIS behaviour itself. Measured on 2026.1, 2026.2, 2026.3.0L.196 and 2027.1.0RCTE.100
+# (irispython-dx dxlab/rows_diff_probe3.py, xfail_workaround_probe.py).
+_TEXT_DATE = re.compile(r"'(\d{4}-\d{2}-\d{2})'(?=\s*$)", re.MULTILINE)
+
+
+def _every_branch_a_date(sql):
+    return _TEXT_DATE.sub(r"cast('\1' as date)", sql)
 
 
 class TestIncrementalUniqueKey(BaseIncrementalUniqueKey):
-    @_UNION_DATE
-    def test__one_unique_key(self, project):
-        super().test__one_unique_key(project)
+    @pytest.fixture(scope="class")
+    def models(self):
+        return {
+            **{
+                f"{name[len('models__'):-len('_sql')]}.sql": sql
+                for name, sql in vars(unique_id).items()
+                if name.startswith("models__") and not name.startswith("models__expected__")
+            },
+            "expected": {
+                "one_str__overwrite.sql": _every_branch_a_date(
+                    unique_id.models__expected__one_str__overwrite_sql
+                ),
+                "unique_key_list__inplace_overwrite.sql": _every_branch_a_date(
+                    unique_id.models__expected__unique_key_list__inplace_overwrite_sql
+                ),
+            },
+        }
 
-    @_UNION_DATE
-    def test__unary_unique_key_list(self, project):
-        super().test__unary_unique_key_list(project)
 
-    @_UNION_DATE
-    def test__duplicated_unary_unique_key_list(self, project):
-        super().test__duplicated_unary_unique_key_list(project)
+class TestUnionOfDateAndText:
+    """The IRIS behaviour behind the fixture above. Strict: when IRIS stores the date's text, this
+    starts passing and the marker has to go."""
 
-    @_UNION_DATE
-    def test__trinary_unique_key_list(self, project):
-        super().test__trinary_unique_key_list(project)
+    @pytest.mark.xfail(
+        strict=True,
+        reason="IRIS stores a DATE's internal value when CREATE TABLE AS a mixed DATE and VARCHAR "
+        "UNION ALL",
+    )
+    def test_create_table_as_keeps_the_dates_text(self, project):
+        t = f"{project.test_schema}.union_dates"
+        project.run_sql(
+            f"create table {t} as select cast('2022-02-14' as date) as d "
+            "union all select '2022-02-15'"
+        )
+        rows = project.run_sql(f"select d from {t} order by d", fetch="all")
+        assert [r[0] for r in rows] == ["2022-02-14", "2022-02-15"]

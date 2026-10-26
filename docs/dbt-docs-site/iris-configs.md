@@ -80,6 +80,28 @@ It gives the same rows as the recursive form for hierarchies up to `max_depth` d
 nodes are left out, so set `max_depth` to at least the deepest level you have. For hierarchies of
 unknown depth, a Python model can walk the tree instead.
 
+## Seeds
+
+IRIS string columns compare without regard to case by default: `'female' = 'Female'` is true,
+and `GROUP BY` returns the upper-case form (`'FEMALE'`). For seeds, `iris_collation` chooses:
+
+| `iris_collation`   | Seed string columns                                              |
+| ------------------ | ---------------------------------------------------------------- |
+| not set, `default` | IRIS default: case-insensitive comparison, upper-case `GROUP BY` |
+| `exact`            | Keep their case in `GROUP BY` and compare case-sensitively       |
+
+Tables and views built from the seed inherit the collation. Any other value fails the seed
+before it is created.
+
+```yaml
+seeds:
+  my_project:
+    +iris_collation: exact
+```
+
+On every IRIS build tested, a view that groups by an `exact` column fails with SQLCODE -400 when
+it is used in `EXCEPT` or in a correlated `NOT EXISTS`. dbt's own data tests use neither.
+
 ## Snapshots
 
 Snapshots support the `check` and `timestamp` strategies, a multi-column `unique_key`,

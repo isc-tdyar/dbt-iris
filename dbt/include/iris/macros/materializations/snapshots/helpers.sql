@@ -41,6 +41,9 @@
       alter table {{ relation }} add column "{{ column.name }}" {{ column.data_type }}
     {% endcall %}
   {% endfor %}
+  {% if columns %}
+    {{ iris_purge_cached_queries(relation) }}
+  {% endif %}
 {% endmacro %}
 
 {% macro iris__get_true_sql() %}

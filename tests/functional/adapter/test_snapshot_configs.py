@@ -244,17 +244,10 @@ class TestSnapshotNewColumnSpecificCheckCols(
     pass
 
 
-# On 2026.3.0L.196 and 2027.1.0RCTE.100 (not 2026.2): after another connection runs
-# ALTER TABLE ... ADD COLUMN, a new connection running the same count(*) text fails with "Invalid
-# number of parameters" (irispython-dx dxlab/stale_count_probe3.py). Not strict: passes on 2026.2.
+# On 2026.3.0L.196 and 2027.1.0RCTE.100 (not 2026.1 or 2026.2), for a user with %All: after
+# another connection runs ALTER TABLE ... ADD COLUMN, a new connection running the same count(*)
+# text fails with "Invalid number of parameters" (irispython-dx dxlab/stale_count_probe3.py). The
+# snapshot adds the source's new column, and the adapter purges the table's cached queries after
+# it (xfail_workaround_probe2.py), so this passes on every build.
 class TestSnapshotNewColumnWithDeletes(IrisSourceSql, BaseSnapshotNewColumnWithDeletes):
-    @pytest.mark.xfail(
-        strict=False,
-        reason="IRIS 2026.3 cached-query regression after ALTER TABLE ADD COLUMN from another connection",
-    )
-    def test_snapshot_new_column_with_deletes(
-        self, project, source_create_sql, source_insert_sql, source_alter_sql, source_delete_sql
-    ):
-        super().test_snapshot_new_column_with_deletes(
-            project, source_create_sql, source_insert_sql, source_alter_sql, source_delete_sql
-        )
+    pass
