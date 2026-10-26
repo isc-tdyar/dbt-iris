@@ -91,6 +91,11 @@ jobs:
         dbt-core:
           - "1.11"
           - "1.12"
+        # The oldest supported IRIS, 2026.1 (latest-em), in one job.
+        include:
+          - image: containers.intersystems.com/intersystems/iris-community:latest-em
+            python: "3.12"
+            dbt-core: "1.12"
     services:
       iris:
         image: ${{ matrix.image }}
