@@ -70,6 +70,17 @@ def _dbapi():
     return importlib.import_module("iris.dbapi")
 
 
+def connect(credentials):
+    """A new driver connection for the profile's credentials (check_driver has passed)."""
+    return _dbapi().connect(
+        hostname=credentials.hostname,
+        port=credentials.port,
+        namespace=credentials.database,
+        username=credentials.username,
+        password=credentials.password,
+    )
+
+
 @dataclass
 class IRISCredentials(Credentials):
     hostname: str
@@ -143,18 +154,9 @@ class IRISConnectionManager(SQLConnectionManager):
             logger.debug("Connection is already open, skipping open.")
             return connection
 
-        credentials = connection.credentials
-        kwargs = {}
-
-        kwargs["hostname"] = credentials.hostname
-        kwargs["port"] = credentials.port
-        kwargs["namespace"] = credentials.database
-        kwargs["username"] = credentials.username
-        kwargs["password"] = credentials.password
-
-        check_driver(credentials)
+        check_driver(connection.credentials)
         try:
-            connection.handle = _dbapi().connect(**kwargs)
+            connection.handle = connect(connection.credentials)
             connection.state = "open"
         except Exception as e:
             raise FailedToConnectError(str(e))

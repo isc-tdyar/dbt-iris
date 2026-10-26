@@ -98,8 +98,19 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
   {% call statement('alter_column_type 4', fetch_result=False) %}
     alter table {{ relation }} modify {{ adapter.quote(tmp_column) }} rename {{ adapter.quote(column_name) }}
   {% endcall %}
+  {{ iris_purge_cached_queries(relation) }}
 
 {% endmacro %}
+
+{#
+  After the adapter changes a table's columns, drop the table's cached queries (see
+  IRISAdapter.purge_cached_queries). dbt Fusion has no such adapter method, so it skips this.
+#}
+{% macro iris_purge_cached_queries(relation) -%}
+  {% if not dbt_version.startswith('2.') %}
+    {% do adapter.purge_cached_queries(relation) %}
+  {% endif %}
+{%- endmacro %}
 
 {% macro iris__list_relations_without_caching(schema_relation) %}
   {% call statement('list_relations_without_caching', fetch_result=True) -%}

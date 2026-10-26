@@ -231,42 +231,56 @@ class TestRowsDifferentSql(unittest.TestCase):
         adapter = self._adapter(types_a, types_b)
         return IRISAdapter.get_rows_different_sql(adapter, "A", "B", names or list(types_a))
 
-    def test_counts_both_directions_with_except(self):
+    def test_counts_rows_on_one_side_only_with_union_all(self):
+        # Not EXCEPT: on IRIS 2026.1 to 2026.3, EXCEPT (and NOT EXISTS) over a view that groups
+        # by an %EXACT column fails with SQLCODE -400 <UNDEFINED>; UNION ALL + GROUP BY does not.
         sql = self._sql({"id": "integer", "v": "varchar"}, {"id": "integer", "v": "varchar"})
         self.assertNotEqual(sql.strip().upper(), "SELECT 0,0")
-        self.assertEqual(sql.upper().count("EXCEPT"), 2)
+        self.assertNotIn("EXCEPT", sql.upper())
         head = "select (select count(*) from A) - (select count(*) from B), "
         self.assertTrue(sql.startswith(head), sql)
+        self.assertIn(
+            'select "id" as dbt_iris_c1, %EXACT("v") as dbt_iris_c2, 1 as dbt_iris_side from A '
+            'union all select "id", %EXACT("v"), 2 from B',
+            sql,
+        )
+        self.assertIn(
+            "group by dbt_iris_c1, dbt_iris_c2 having min(dbt_iris_side) = max(dbt_iris_side)", sql
+        )
 
     def test_strings_compare_exactly(self):
         sql = self._sql({"v": "varchar"}, {"v": "char"})
-        self.assertEqual(sql.count('%EXACT("v")'), 4)
+        self.assertEqual(sql.count('%EXACT("v")'), 2)
 
     def test_stream_compares_by_content(self):
         sql = self._sql({"g": "longvarchar"}, {"g": "varchar"})
-        self.assertIn('select %EXACT(SUBSTRING("g", 1, 3641144)) from A EXCEPT', sql)
-        self.assertIn('select %EXACT("g") from B', sql)
+        self.assertIn('select %EXACT(SUBSTRING("g", 1, 3641144)) as dbt_iris_c1, 1', sql)
+        self.assertIn('union all select %EXACT("g"), 2 from B', sql)
 
     def test_temporal_compares_as_odbc_text(self):
         sql = self._sql({"d": "date", "t": "timestamp"}, {"d": "varchar", "t": "timestamp"})
         self.assertIn(
-            '%EXACT(CAST("d" AS VARCHAR(64))), %EXACT(CAST("t" AS VARCHAR(64))) from A', sql
+            '%EXACT(CAST("d" AS VARCHAR(64))) as dbt_iris_c1, '
+            '%EXACT(CAST("t" AS VARCHAR(64))) as dbt_iris_c2',
+            sql,
         )
-        self.assertIn('%EXACT("d"), %EXACT(CAST("t" AS VARCHAR(64))) from B', sql)
+        self.assertIn('select %EXACT("d"), %EXACT(CAST("t" AS VARCHAR(64))), 2 from B', sql)
 
     def test_numbers_and_unknown_columns_are_left_bare(self):
         types_a, types_b = {"n": "numeric", "x": "bigint"}, {"n": "double", "x": "bigint"}
         sql = self._sql(types_a, types_b, ["n", "x", "missing"])
-        self.assertIn('select "n", "x", "missing" from A', sql)
-        self.assertIn('select "n", "x", "missing" from B', sql)
+        self.assertIn(
+            'select "n" as dbt_iris_c1, "x" as dbt_iris_c2, "missing" as dbt_iris_c3', sql
+        )
+        self.assertIn('union all select "n", "x", "missing", 2 from B', sql)
 
     def test_column_names_match_types_case_insensitively(self):
         sql = self._sql({"State": "varchar"}, {"STATE": "varchar"}, ["state"])
-        self.assertEqual(sql.count('%EXACT("state")'), 4)
+        self.assertEqual(sql.count('%EXACT("state")'), 2)
 
     def test_no_column_names_uses_relation_a_columns(self):
         adapter = self._adapter(
             {"id": "integer", "v": "varchar"}, {"id": "integer", "v": "varchar"}
         )
         sql = IRISAdapter.get_rows_different_sql(adapter, "A", "B")
-        self.assertIn('select "id", %EXACT("v") from A', sql)
+        self.assertIn('select "id" as dbt_iris_c1, %EXACT("v") as dbt_iris_c2, 1', sql)

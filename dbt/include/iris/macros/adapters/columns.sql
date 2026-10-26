@@ -48,4 +48,8 @@
 
   {% endif %}
 
+  {% if add_columns or remove_columns %}
+    {{ iris_purge_cached_queries(relation) }}
+  {% endif %}
+
 {% endmacro %}

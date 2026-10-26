@@ -15,6 +15,7 @@ from dbt.adapters.iris import IRISColumn
 from dbt.adapters.iris import IRISRelation
 from dbt.adapters.iris import capabilities
 from dbt.adapters.iris import materialized_view
+from dbt.adapters.iris import connections
 from dbt.adapters.iris.connections import _server_key
 
 LIST_SCHEMAS_MACRO_NAME = "list_schemas"
@@ -270,6 +271,34 @@ class IRISAdapter(SQLAdapter):
         return split_leading_ctes(flatten_nested_ctes(sql))
 
     @available
+    def purge_cached_queries(self, relation) -> None:
+        """Drop the cached queries on relation after its columns changed, from a second connection.
+
+        On IRIS 2026.3 and later, for a user with %All, a statement another connection had run on
+        the table fails with "Invalid number of parameters" when it runs again on a new connection
+        after ALTER TABLE ... ADD COLUMN. PURGE CACHED QUERIES BY TABLE clears it, but only when it
+        comes from a connection other than the one that ran the ALTER. Best effort: a failure here
+        is logged and never fails the run.
+        """
+        sql = f"purge cached queries by table {relation}"
+        try:
+            handle = connections.connect(self.connections.get_thread_connection().credentials)
+        except Exception as e:
+            logger.debug(f"{sql}: could not connect: {e}")
+            return
+        try:
+            cursor = handle.cursor()
+            cursor.execute(sql)
+            cursor.close()
+        except Exception as e:
+            logger.debug(f"{sql}: {e}")
+        finally:
+            try:
+                handle.close()
+            except Exception:
+                pass
+
+    @available
     def materialized_view_mode(self, value) -> str:
         """'table' or 'view' for iris_materialized_view_as; anything else is a compile error."""
         return materialized_view.resolve_mode(value)
@@ -340,7 +369,20 @@ class IRISAdapter(SQLAdapter):
         return f"dateadd('{interval}', {number}, {add_to})"
 
     def create_schema(self, schema_relation: BaseRelation) -> None:
-        self.execute_macro("create_function_hash", kwargs={})
+        """IRIS creates a schema with its first table; this installs HASH() for snapshots. IRIS
+        refuses CREATE FUNCTION with ObjectScript code (SQLCODE -99) to a user without
+        %Developer. Only snapshots use HASH, so that refusal is a warning, not a failed run."""
+        try:
+            self.execute_macro("create_function_hash", kwargs={})
+        except DbtRuntimeError as e:
+            if capabilities.sqlcode(e) != -99:
+                raise
+            logger.warning(
+                "dbt-iris: could not install the HASH() SQL function that snapshots use: this "
+                "IRIS user may not create functions with ObjectScript code. Models, seeds and "
+                "tests run; snapshots need a user with the %Developer role, or HASH() installed "
+                "once by one."
+            )
 
     def drop_schema(self, schema_relation) -> None:
         try:
@@ -395,24 +437,34 @@ class IRISAdapter(SQLAdapter):
         """Row-count difference and number of rows in one relation but not the other, both
         directions, as dbt's test helper check_relations_equal expects.
 
-        A bare EXCEPT on IRIS compares strings under SQLUPPER (case and trailing spaces
+        A bare comparison on IRIS treats strings under SQLUPPER (case and trailing spaces
         ignored), never matches a stream column, and compares a DATE with a VARCHAR by the
         DATE's internal value. So each column is normalised by its own type on each side:
-        strings exact, streams by content, dates and times as their ODBC text."""
+        strings exact, streams by content, dates and times as their ODBC text.
+
+        The rows on one side only are counted with UNION ALL and GROUP BY, not EXCEPT: on IRIS
+        2026.1 to 2026.3, EXCEPT (and NOT EXISTS) over a view that groups by an %EXACT-collated
+        column fails with SQLCODE -400 <UNDEFINED>. A group that only one side contributes to is
+        a distinct row in one relation and not the other, which is what EXCEPT counted.
+        except_operator is accepted for dbt's signature and not used."""
         columns_a = self.get_columns_in_relation(relation_a)
         columns_b = self.get_columns_in_relation(relation_b)
         names = column_names or [c.name for c in columns_a]
 
-        def select_list(columns) -> str:
+        def expressions(columns) -> List[str]:
             types = {c.name.lower(): (c.dtype or "").lower() for c in columns}
-            return ", ".join(_comparable(self.quote(n), types.get(n.lower(), "")) for n in names)
+            return [_comparable(self.quote(n), types.get(n.lower(), "")) for n in names]
 
-        a, b, op = relation_a, relation_b, except_operator
-        cols_a, cols_b = select_list(columns_a), select_list(columns_b)
+        a, b = relation_a, relation_b
+        aliases = [f"dbt_iris_c{i}" for i in range(1, len(names) + 1)]
+        side_a = ", ".join(f"{e} as {alias}" for e, alias in zip(expressions(columns_a), aliases))
+        side_b = ", ".join(expressions(columns_b))
         return (
             f"select (select count(*) from {a}) - (select count(*) from {b}), "
-            f"(select count(*) from (select {cols_a} from {a} {op} select {cols_b} from {b}) x) + "
-            f"(select count(*) from (select {cols_b} from {b} {op} select {cols_a} from {a}) y)"
+            f"(select count(*) from (select {', '.join(aliases)} from ("
+            f"select {side_a}, 1 as dbt_iris_side from {a} "
+            f"union all select {side_b}, 2 from {b}"
+            f") z group by {', '.join(aliases)} having min(dbt_iris_side) = max(dbt_iris_side)) x)"
         )
 
     def get_missing_columns(

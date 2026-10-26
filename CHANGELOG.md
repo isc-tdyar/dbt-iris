@@ -49,11 +49,21 @@ step and, for some incremental models, one full refresh: see
   column with strings carrying a timezone offset, and matched no rows.
 - `get_rows_different_sql` compares table contents. In 1.9.x it returned `SELECT 0,0`, so dbt's
   equality checks between relations could never fail.
+- After the adapter adds or drops a table's columns, it purges the table's cached queries from a
+  second connection. On IRIS 2026.3, for a user with `%All` such as `_SYSTEM`, a query another
+  connection had run on the table otherwise failed with "Invalid number of parameters".
+- `get_rows_different_sql` counts the rows on one side only with `UNION ALL` and `GROUP BY`. With
+  `EXCEPT`, IRIS failed with SQLCODE -400 when one side was a view grouping by an `%EXACT` column.
+- A user who may not create functions with ObjectScript code can run dbt. Installing `HASH`
+  failed every run on a new schema; it is now a warning, and only snapshots need the
+  `%Developer` role.
 - The Dockerfile pins an image tag that exists (issue #7).
 
 ### New
 
 - `microbatch` incremental strategy.
+- `iris_collation: exact` for seeds: string columns keep their case in `GROUP BY` and compare
+  case-sensitively, as on other warehouses. The default is unchanged.
 - `merge` honours `merge_update_columns`, `merge_exclude_columns` and `incremental_predicates`,
   and uses `MERGE` when the server accepts it.
 - Snapshots follow dbt 1.9's snapshot configuration: `snapshot_meta_column_names`,
