@@ -58,13 +58,15 @@ class TestIncrementalUniqueKey(BaseIncrementalUniqueKey):
 
 
 class TestUnionOfDateAndText:
-    """The IRIS behaviour behind the fixture above. Strict: when IRIS stores the date's text, this
-    starts passing and the marker has to go."""
+    """The IRIS defect behind the fixture above, kept as a strict expected failure so that a fixed
+    IRIS build shows up as a failing test with instructions."""
 
     @pytest.mark.xfail(
         strict=True,
-        reason="IRIS stores a DATE's internal value when CREATE TABLE AS a mixed DATE and VARCHAR "
-        "UNION ALL",
+        reason="IRIS defect: CREATE TABLE AS of a UNION ALL with a DATE leg and a VARCHAR leg "
+        "stores the date's internal day number ('66154') instead of its text. If this test "
+        "XPASSes, this IRIS build is fixed: remove the xfail marker, and say from which IRIS "
+        "release in the README's 'UNION of a DATE and text' note.",
     )
     def test_create_table_as_keeps_the_dates_text(self, project):
         t = f"{project.test_schema}.union_dates"
@@ -72,5 +74,8 @@ class TestUnionOfDateAndText:
             f"create table {t} as select cast('2022-02-14' as date) as d "
             "union all select '2022-02-15'"
         )
-        rows = project.run_sql(f"select d from {t} order by d", fetch="all")
-        assert [r[0] for r in rows] == ["2022-02-14", "2022-02-15"]
+        stored = [r[0] for r in project.run_sql(f"select d from {t} order by d", fetch="all")]
+        assert stored == ["2022-02-14", "2022-02-15"], (
+            f"CREATE TABLE AS of a DATE/VARCHAR UNION ALL stored {stored}, and "
+            "'66154' is the DATE's internal day number for 2022-02-14"
+        )
