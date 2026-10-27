@@ -227,3 +227,14 @@ class TestRecursiveCheck(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRelease(unittest.TestCase):
+    def test_year_and_minor_from_the_parsed_version(self):
+        from dbt.adapters.iris.capabilities import release
+
+        self.assertEqual(release("2026.1 (Build 234U)"), (2026, 1))
+        self.assertEqual(release("2026.3.0L (Build 196U)"), (2026, 3))
+        self.assertEqual(release("2027.1.0RCTE.100.0 (Build 100U)"), (2027, 1))
+        self.assertIsNone(release(None))
+        self.assertIsNone(release("unknown"))

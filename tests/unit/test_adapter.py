@@ -71,8 +71,8 @@ class TestIRISAdapter(unittest.TestCase):
 
 class TestPurgeCachedQueries(unittest.TestCase):
     """purge_cached_queries runs PURGE CACHED QUERIES BY TABLE on a second connection: IRIS 2026.3
-    ignores the purge when it comes from the connection that ran the ALTER. It never fails a run.
-    """
+    ignores the purge when it comes from the connection that ran the ALTER. It never fails a run,
+    and it is skipped on releases before 2026.3, which do not have the stale-query defect."""
 
     setUp = TestIRISAdapter.setUp
     adapter = TestIRISAdapter.adapter
@@ -82,15 +82,18 @@ class TestPurgeCachedQueries(unittest.TestCase):
         relation.__str__ = mock.Mock(return_value='"dbt"."orders"')
         return relation
 
-    @mock.patch("dbt.adapters.iris.connections._dbapi")
-    def test_purges_the_table_on_a_new_connection_and_closes_it(self, dbapi):
+    def _purge(self, dbapi, version="2026.3.0L (Build 196U)"):
         self.adapter.acquire_connection("dummy").handle
-        thread_handle = dbapi.return_value.connect.return_value
         second = mock.Mock()
         dbapi.return_value.connect.side_effect = [second]
+        with mock.patch("dbt.adapters.iris.capabilities.server_version", return_value=version):
+            self.adapter.purge_cached_queries(self._relation())
+        return second
 
-        self.adapter.purge_cached_queries(self._relation())
-
+    @mock.patch("dbt.adapters.iris.connections._dbapi")
+    def test_purges_the_table_on_a_new_connection_and_closes_it(self, dbapi):
+        thread_handle = dbapi.return_value.connect.return_value
+        second = self._purge(dbapi)
         kwargs = dbapi.return_value.connect.call_args.kwargs
         self.assertEqual(kwargs["hostname"], "thishostshouldnotexist")
         self.assertEqual(kwargs["namespace"], "USER")
@@ -101,10 +104,25 @@ class TestPurgeCachedQueries(unittest.TestCase):
         thread_handle.cursor.return_value.execute.assert_not_called()
 
     @mock.patch("dbt.adapters.iris.connections._dbapi")
+    def test_releases_before_2026_3_are_skipped(self, dbapi):
+        for version in ("2026.1 (Build 234U)", "2026.2 (Build 221U)", "2025.1 (Build 223U)"):
+            dbapi.reset_mock()
+            second = self._purge(dbapi, version)
+            second.cursor.assert_not_called()
+
+    @mock.patch("dbt.adapters.iris.connections._dbapi")
+    def test_later_and_unknown_releases_are_purged(self, dbapi):
+        for version in ("2026.3.0L (Build 196U)", "2027.1.0RCTE.100.0 (Build 100U)", None):
+            dbapi.reset_mock()
+            second = self._purge(dbapi, version)
+            second.cursor.return_value.execute.assert_called_once()
+
+    @mock.patch("dbt.adapters.iris.connections._dbapi")
     def test_a_failed_connect_is_ignored(self, dbapi):
         self.adapter.acquire_connection("dummy").handle
         dbapi.return_value.connect.side_effect = [RuntimeError("no licence")]
-        self.adapter.purge_cached_queries(self._relation())
+        with mock.patch("dbt.adapters.iris.capabilities.server_version", return_value=None):
+            self.adapter.purge_cached_queries(self._relation())
 
     @mock.patch("dbt.adapters.iris.connections._dbapi")
     def test_a_failed_purge_is_ignored_and_the_connection_closed(self, dbapi):
@@ -112,7 +130,8 @@ class TestPurgeCachedQueries(unittest.TestCase):
         second = mock.Mock()
         second.cursor.return_value.execute.side_effect = RuntimeError("SQLCODE: <-99>")
         dbapi.return_value.connect.side_effect = [second]
-        self.adapter.purge_cached_queries(self._relation())
+        with mock.patch("dbt.adapters.iris.capabilities.server_version", return_value=None):
+            self.adapter.purge_cached_queries(self._relation())
         second.close.assert_called_once()
 
 

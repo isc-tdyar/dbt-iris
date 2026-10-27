@@ -367,11 +367,18 @@ class IRISAdapter(SQLAdapter):
         the table fails with "Invalid number of parameters" when it runs again on a new connection
         after ALTER TABLE ... ADD COLUMN. PURGE CACHED QUERIES BY TABLE clears it, but only when it
         comes from a connection other than the one that ran the ALTER. Best effort: a failure here
-        is logged and never fails the run.
+        is logged and never fails the run. Releases before 2026.3 do not have the defect, so the
+        purge, and its second connection, is skipped there.
         """
+        connection = self.connections.get_thread_connection()
+        found = capabilities.release(
+            capabilities.server_version(_server_key(connection), connection.handle)
+        )
+        if found is not None and found < (2026, 3):
+            return
         sql = f"purge cached queries by table {relation}"
         try:
-            handle = connections.connect(self.connections.get_thread_connection().credentials)
+            handle = connections.connect(connection.credentials)
         except Exception as e:
             logger.debug(f"{sql}: could not connect: {e}")
             return
@@ -489,7 +496,7 @@ class IRISAdapter(SQLAdapter):
         exists = True if schema in [row[0] for row in results] else False
         return exists
 
-    def list_relations_without_caching(self, schema_relation: IRISRelation) -> List[IRISRelation]:
+    def list_relations_without_caching(self, schema_relation: BaseRelation) -> List[BaseRelation]:
         kwargs = {"schema_relation": schema_relation}
         try:
             results = self.execute_macro(LIST_RELATIONS_MACRO_NAME, kwargs=kwargs)
@@ -500,7 +507,7 @@ class IRISAdapter(SQLAdapter):
                 logger.debug(f"{description} {schema_relation}: {e.msg}")
             return []
 
-        relations = []
+        relations: List[BaseRelation] = []
         _database = schema_relation.database
         for row in results:
             if len(row) != 4:

@@ -250,6 +250,20 @@ changes), so dbt runs no longer hit this. You can still meet it in your own SQL 
 `PURGE CACHED QUERIES BY TABLE "schema"."table"` from a connection other than the one that ran the
 `ALTER`, or connect as a user without `%All`. IRIS 2026.1 and 2026.2 are not affected.
 
+### `[SQLCODE: <-114>:<One or more matching rows is locked by another user>]` with `Lock Timeout attempting to acquire shared lock on Cached Query metadata during Prepare()`
+
+**Cause.** IRIS's adaptive mode, on by default, tunes a table the first time it is queried. A
+background IRIS process then regenerates the table's cached queries while holding their
+metadata lock, sometimes for a couple of minutes. A statement prepared on that table in that
+window waits for the lock and then fails. It often shows in the first `dbt test` or query right
+after a model is built.
+
+**Fix.** dbt-iris sends such a statement again, because it never ran, so dbt runs normally see
+only a delay. If the error still reaches you, run the command again. On a server used only for
+testing, turning adaptive mode off avoids the wait:
+`do $SYSTEM.SQL.Util.SetOption("AdaptiveMode", 0)` in a `%SYS` terminal session. Leave it on in
+production, where it keeps query plans current.
+
 ### `ERROR #5864` while two dbt runs are going
 
 The same situation can also give `ERROR #5351` (class does not exist), `ERROR #5116` (class
