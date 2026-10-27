@@ -11,4 +11,4 @@ select
     gender,
     count(*) as ct
 from users
-group by 1
+group by gender
