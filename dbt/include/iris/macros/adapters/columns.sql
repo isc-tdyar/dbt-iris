@@ -1,7 +1,10 @@
 {% macro iris__get_columns_in_query(select_sql) %}
+    {#- IRIS rejects WITH inside a derived table; hoist leading CTEs above the wrapper. -#}
+    {%- set parts = adapter.split_leading_ctes(select_sql) -%}
     {% call statement('get_columns_in_query', fetch_result=True, auto_begin=False) -%}
+        {{ parts[0] }}
         select top 0 * from (
-            {{ select_sql }}
+            {{ parts[1] }}
         ) as __dbt_sbq
         where 1=0
     {% endcall %}
@@ -13,11 +16,12 @@
     {%- if select_sql_header is not none -%}
     {{ select_sql_header }}
     {%- endif -%}
-    select * from (
-        {{ select_sql }}
+    {%- set parts = adapter.split_leading_ctes(select_sql) -%}
+    {{ parts[0] }}
+    select top 0 * from (
+        {{ parts[1] }}
     ) as __dbt_sbq
     where 1=0
-    limit 0
 {% endmacro %}
 
 {% macro iris__alter_relation_add_remove_columns(relation, add_columns, remove_columns) %}
@@ -42,6 +46,10 @@
       {% do run_query(sql) %}
     {% endfor %}
 
+  {% endif %}
+
+  {% if add_columns or remove_columns %}
+    {{ iris_purge_cached_queries(relation) }}
   {% endif %}
 
 {% endmacro %}

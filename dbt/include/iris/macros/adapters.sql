@@ -19,30 +19,62 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
 {% endmacro %}
 
 {% macro iris__create_schema(schema_relation) -%}
-  {# no-op #}
+  {#
+    IRIS creates a schema with its first table, so there is nothing to create here. dbt runs
+    create_schema before any model, which makes it the place to install HASH() for snapshots.
+    IRISAdapter.create_schema does the same in Python; adapters that run this macro directly
+    (dbt Fusion) need it here.
+  #}
+  {{ create_function_hash() }}
 {% endmacro %}
 
+{#
+  hash(alg, str): the hex digest of str's UTF-8 bytes, in lower case, as hashlib.new(alg,
+  str.encode()).hexdigest() gives it in 1.9.x. Written in ObjectScript so that snapshots need no
+  Embedded Python on the server. A NULL input gives NULL. SQL's empty string reaches the function
+  as $Char(0), and is hashed as that byte, exactly as the 1.9.x Python function did, so existing
+  dbt_scd_id values stay valid.
+#}
 {% macro create_function_hash() -%}
   {% call statement('_', auto_begin=False) -%}
     CREATE OR REPLACE FUNCTION HASH(alg VARCHAR(''), str VARCHAR(''))
     PROCEDURE
     RETURNS VARCHAR(1024)
-    LANGUAGE PYTHON
+    LANGUAGE OBJECTSCRIPT
     {
-      import hashlib
-      return hashlib.new(alg, str.encode()).hexdigest()
+      If str = "" Quit ""
+      Set tBytes = $ZConvert(str, "O", "UTF8")
+      Set tAlg = $ZConvert(alg, "L")
+      If tAlg = "md5" {
+        Set tDigest = $System.Encryption.MD5Hash(tBytes)
+      } ElseIf tAlg = "sha1" {
+        Set tDigest = $System.Encryption.SHA1Hash(tBytes)
+      } ElseIf tAlg = "sha256" {
+        Set tDigest = $System.Encryption.SHAHash(256, tBytes)
+      } Else {
+        Throw ##class(%Exception.General).%New("dbt-iris HASH: unsupported algorithm " _ alg)
+      }
+      Quit $ZConvert(##class(%xsd.hexBinary).LogicalToXSD(tDigest), "L")
     }
   {%- endcall %}
 {% endmacro %}
 
-{% macro iris__drop_schema(relation) -%}
-'''drops a schema in a target database.'''
-  {# no-op #}
-{% endmacro %}
+{#
+  drop_schema: dbt's default__drop_schema (drop schema if exists ... cascade), which IRIS accepts
+  from 2026.1. IRISAdapter.drop_schema drops each relation in Python instead; adapters that run
+  the macro directly (dbt Fusion) use the default.
 
-{% macro iris__check_schema_exists(database, schema) -%}
-'''Checks if schema name exists and returns number or times it shows up.'''
-  {# no-op #}
+  check_schema_exists: IRISAdapter.check_schema_exists reads list_schemas in Python; this is the
+  same answer for adapters that run the macro directly. An IRIS schema is not in a catalog, and
+  its name matches in any case.
+#}
+{% macro iris__check_schema_exists(information_schema, schema) -%}
+  {% set sql -%}
+    select count(*)
+    from information_schema.schemata
+    where upper(schema_name) = upper('{{ schema | replace("'", "''") }}')
+  {%- endset %}
+  {{ return(run_query(sql)) }}
 {% endmacro %}
 
 {% macro iris__alter_column_type(relation, column_name, new_column_type) -%}
@@ -66,8 +98,19 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
   {% call statement('alter_column_type 4', fetch_result=False) %}
     alter table {{ relation }} modify {{ adapter.quote(tmp_column) }} rename {{ adapter.quote(column_name) }}
   {% endcall %}
+  {{ iris_purge_cached_queries(relation) }}
 
 {% endmacro %}
+
+{#
+  After the adapter changes a table's columns, drop the table's cached queries (see
+  IRISAdapter.purge_cached_queries). dbt Fusion has no such adapter method, so it skips this.
+#}
+{% macro iris_purge_cached_queries(relation) -%}
+  {% if not dbt_version.startswith('2.') %}
+    {% do adapter.purge_cached_queries(relation) %}
+  {% endif %}
+{%- endmacro %}
 
 {% macro iris__list_relations_without_caching(schema_relation) %}
   {% call statement('list_relations_without_caching', fetch_result=True) -%}
@@ -115,7 +158,7 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
     /* create_table_as */
     {{ sql_header if sql_header is not none }}
     create {% if temporary: -%}global temporary{%- endif %} table {{ relation }} as
-      {{ compiled_code }}
+      {{ adapter.flatten_nested_ctes(compiled_code) }}
   {%- elif language == 'python' -%}
     {{ py_write_table(compiled_code=compiled_code, target_relation=relation, temporary=temporary) }}
   {%- else -%}
@@ -136,6 +179,8 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
     {% call statement('rename_relation') -%}
       alter {{ from_relation.type }} {{ from_relation }} rename {{ target_name }}
     {%- endcall %}
+    {#-- A query cached on the old table under this name can fail on 2026.3 after the swap. --#}
+    {{ iris_purge_cached_queries(to_relation) }}
   {%- elif from_relation.type == 'view' -%}
     {% do adapter.dispatch('rename_view')(from_relation, to_relation) %}
   {% else -%}

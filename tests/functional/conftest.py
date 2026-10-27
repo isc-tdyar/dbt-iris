@@ -1,6 +1,5 @@
 import pytest
 import os
-from testcontainers.iris import IRISContainer
 
 from tests.functional.projects import dbt_integration
 
@@ -36,6 +35,9 @@ def pytest_configure(config):
     image = config.getoption("--container")
     if not image:
         return
+
+    # testcontainers is only needed with --container; it also pins an older driver.
+    from testcontainers.iris import IRISContainer
 
     print("Starting IRIS container:", image)
     iris = IRISContainer(

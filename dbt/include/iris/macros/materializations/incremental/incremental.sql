@@ -43,6 +43,8 @@
       {% set need_swap = true %}
   {% else %}
     {% do run_query(get_create_table_as_sql(True, temp_relation, sql)) %}
+    {#-- Its name carries the invocation id, so a definition left behind is a new table per run. --#}
+    {% do to_drop.append(temp_relation) %}
     {% set relation_for_indexes = temp_relation %}
     {% set contract_config = config.get('contract') %}
     {% if not contract_config or not contract_config.enforced %}
@@ -97,4 +99,3 @@
   {{ return({'relations': [target_relation]}) }}
 
 {%- endmaterialization %}
-

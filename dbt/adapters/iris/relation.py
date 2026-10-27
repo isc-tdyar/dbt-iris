@@ -44,6 +44,24 @@ class IRISRelation(BaseRelation):
     quote_policy: Policy = field(default_factory=lambda: IRISQuotePolicy())
     include_policy: Policy = field(default_factory=lambda: IRISIncludePolicy())
 
+    def _render_event_time_filtered(self, event_time_filter) -> str:
+        """Microbatch input filter with IRIS timestamp literals.
+
+        dbt's default writes the bounds as strings with a timezone offset, which an IRIS
+        TIMESTAMP comparison does not match. Bounds are in UTC, as dbt computes them.
+        """
+
+        def literal(value) -> str:
+            return f"cast('{value.strftime('%Y-%m-%d %H:%M:%S')}' as timestamp)"
+
+        field_name = event_time_filter.field_name
+        parts = []
+        if event_time_filter.start:
+            parts.append(f"{field_name} >= {literal(event_time_filter.start)}")
+        if event_time_filter.end:
+            parts.append(f"{field_name} < {literal(event_time_filter.end)}")
+        return " and ".join(parts)
+
     def __repr__(self) -> str:
         return "<{} {} {}>".format(self.__class__.__name__, self.type, self.render())
 

@@ -71,7 +71,7 @@ except:
 
 try:
   from sqlalchemy import create_engine
-  import intersystems_iris
+  import sqlalchemy_iris
 except:
   raise Exception("Missing required dependencies: sqlalchemy, sqlalchemy-iris")
 
@@ -89,7 +89,9 @@ class IRISSession:
         self.engine = create_engine('iris+emb:///')
 
     def table(self, full_name) -> DataFrame:
-        [schema, table] = full_name.split('.') if '.' in full_name else [self.default_schema, full_name]
+        # dbt passes quoted relations: "schema"."table"
+        names = [name.strip('"') for name in full_name.split('.')]
+        [schema, table] = names if len(names) == 2 else [self.default_schema, names[0]]
         df = pandas.read_sql_table(table, self.engine, schema=schema)
         return DataFrame(df)
 
@@ -100,5 +102,4 @@ session = IRISSession()
 dbt = dbtObj(session.table)
 df = model(dbt, session)
 session.to_sql(df, '{{ target_relation.identifier }}', '{{ target_relation.schema }}')
-return "OK"
 {% endmacro %}

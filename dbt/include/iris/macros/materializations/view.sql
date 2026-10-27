@@ -39,7 +39,7 @@
   /* create_view_as */
   CREATE OR REPLACE VIEW {{ relation }}
   {# create table {{ relation }} #}
-  as {{ sql }}
+  as {{ adapter.flatten_nested_ctes(sql) }}
 
 {%- endmacro %}
 

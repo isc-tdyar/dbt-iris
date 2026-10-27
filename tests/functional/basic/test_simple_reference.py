@@ -175,7 +175,9 @@ def project_config_update():
                 "var_ref": '{{ ref("view_copy") }}',
             },
         },
-        "seeds": {"quote_columns": False},
+        # IRIS GROUP BY returns a string column's upper-case collation value ('FEMALE') unless
+        # the column's collation is exact; the expected seed has 'Female'.
+        "seeds": {"quote_columns": False, "+iris_collation": "exact"},
     }
 
 

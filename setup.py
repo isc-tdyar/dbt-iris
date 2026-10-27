@@ -23,7 +23,8 @@ setup(
     name=package_name,
     version=_dbt_iris_version(),
     description=description,
-    long_description=description,
+    long_description=(Path(__file__).parent / "README.md").read_text(encoding="utf-8"),
+    long_description_content_type="text/markdown",
     license="MIT",
     author="CaretDev",
     author_email="info@caretdev.com",
@@ -32,27 +33,24 @@ setup(
         include=[
             "dbt",
             "dbt.*",
-            "iris",
-            "intersystems_iris",
-            "intersystems_iris.*",
-            "irisnative",
         ]
     ),
     include_package_data=True,
     install_requires=[
-        "dbt-adapters>=1.1.1,<2.0",
+        "dbt-adapters>=1.15.2,<2.0",
         # add dbt-core to ensure backwards compatibility of installation, this is not a functional dependency
-        "dbt-core>=1.8.0",
-        "dbt-common>=1.0.4,<2.0",
+        "dbt-core>=1.10.0",
+        "dbt-common>=1.22.0,<2.0",
+        # The InterSystems DB-API driver; the only driver since 2.0.0.
+        "intersystems-irispython>=5.4.0",
     ],
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
     ],
-    python_requires=">3.7",
+    python_requires=">=3.10",
 )
