@@ -179,6 +179,8 @@ dbt docs: https://docs.getdbt.com/docs/contributing/building-a-new-adapter
     {% call statement('rename_relation') -%}
       alter {{ from_relation.type }} {{ from_relation }} rename {{ target_name }}
     {%- endcall %}
+    {#-- A query cached on the old table under this name can fail on 2026.3 after the swap. --#}
+    {{ iris_purge_cached_queries(to_relation) }}
   {%- elif from_relation.type == 'view' -%}
     {% do adapter.dispatch('rename_view')(from_relation, to_relation) %}
   {% else -%}
