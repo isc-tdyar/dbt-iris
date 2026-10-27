@@ -117,6 +117,15 @@ def parse_zversion(zversion: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+_RELEASE = re.compile(r"^(\d{4})\.(\d+)")
+
+
+def release(version: Optional[str]) -> Optional[Tuple[int, int]]:
+    """'2026.3.0L (Build 196U)' -> (2026, 3); None when the version is unknown."""
+    m = _RELEASE.match(version or "")
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
 _versions: Dict[ServerKey, str] = {}
 
 
