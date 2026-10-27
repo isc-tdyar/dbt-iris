@@ -44,11 +44,17 @@ from one deliberate expected failure that records an IRIS defect.
     from it stores `'66154'` for 2022-02-14);
   - a `GROUP BY` with a column number (IRIS reads `GROUP BY 1` as the constant 1, as its SQL
     reference documents, so every row falls into one group).
-- **Cached queries after a column change.** On IRIS 2026.3, for a user with `%All`, a statement
-  another connection prepared before an `ALTER TABLE ... ADD COLUMN` fails afterwards with
-  "Invalid number of parameters". After each column change it makes, the adapter runs
-  `PURGE CACHED QUERIES BY TABLE` from a second connection (the purge has no effect from the
-  connection that ran the `ALTER`).
+- **Cached queries after a column change or a table swap.** On IRIS 2026.3, for a user with
+  `%All`, a statement another connection prepared before an `ALTER TABLE ... ADD COLUMN`, or
+  before dbt renamed a rebuilt table into place, fails afterwards with "Invalid number of
+  parameters". After each such change the adapter runs `PURGE CACHED QUERIES BY TABLE` from a
+  second connection (the purge has no effect from the connection that made the change). It skips
+  this on releases before 2026.3, which do not have the defect.
+- **Background tuning that holds a lock.** With IRIS's adaptive mode (the default), the first
+  query of a table starts an automatic tune, and a background worker then regenerates the
+  table's cached queries while holding their metadata lock, for up to about two minutes. A
+  statement prepared in that window fails with SQLCODE -114. The statement never ran, so the
+  adapter sends it again.
 - **Users without `%Developer`.** IRIS refuses `CREATE FUNCTION` and `CREATE PROCEDURE` with code
   to a user with only SQL privileges. 1.9.x failed every run on a new schema for such a user,
   because it installs `HASH()` there; 2.0.0 warns and runs everything except snapshots and Python
