@@ -84,11 +84,16 @@ step and, for some incremental models, one full refresh: see
 
 ### Changes
 
+- A user guide in `docs/`: an overview of how the adapter works, a tutorial on the
+  `examples/jaffle_shop` project (built in CI), a configuration reference, IRIS SQL differences,
+  troubleshooting by error message, the dbt Fusion preview and a contributing guide.
 - The `HASH` function used by snapshots is ObjectScript, so snapshots need no Embedded Python. It
   returns the same values as 1.9.x, including for the empty string, so existing snapshot history
   stays valid.
-- Backup tables carry the invocation id, like temporary tables, and DDL that meets another
-  process's class lock is retried (issue #3).
+- Temporary, intermediate and backup tables carry the invocation id, so overlapping runs never
+  share one, and none is left behind: an incremental run's temporary table and a snapshot's
+  staging table are dropped when the model is done. DDL that meets another process's class lock
+  is retried (issue #3).
 - Statements without bindings are run as `cursor.execute(sql)`; the driver rejects an explicit
   `None`.
 - Result rows are copied out of the cursor before dbt reads them. The driver's rows cannot be

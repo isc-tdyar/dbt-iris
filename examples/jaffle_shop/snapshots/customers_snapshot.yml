@@ -1,0 +1,8 @@
+snapshots:
+  - name: customers_snapshot
+    relation: ref('raw_customers')
+    description: Keeps every version of each customer row; a changed name adds a new row.
+    config:
+      unique_key: id
+      strategy: check
+      check_cols: all

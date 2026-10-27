@@ -65,4 +65,4 @@ Check the connection with `dbt debug`.
 Users need the SQL privileges to create tables and views in `schema`. Snapshots also need a
 `HASH` SQL function, written in ObjectScript, that the adapter installs when it creates a schema.
 IRIS refuses `CREATE FUNCTION` with code to a user who has only SQL privileges; the `%Developer`
-role is enough. Without it, dbt warns and runs everything except snapshots.
+role is enough. Without it, dbt warns and runs everything except snapshots and Python models.

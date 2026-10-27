@@ -253,3 +253,11 @@
     {%- endif %}
 
 {%- endmacro %}
+
+{#
+  The staging table's name carries the invocation id (iris__make_temp_relation), so dbt's no-op
+  default would leave a new table in the schema on every snapshot run.
+#}
+{% macro iris__post_snapshot(staging_relation) %}
+  {% do adapter.drop_relation(staging_relation) %}
+{% endmacro %}

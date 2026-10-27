@@ -1,0 +1,15 @@
+# dbt reads this file when you pass --profiles-dir examples/jaffle_shop.
+# Each setting can be changed with an environment variable; the defaults match the
+# repository's docker-compose.yml.
+jaffle_shop:
+  target: dev
+  outputs:
+    dev:
+      type: iris
+      hostname: "{{ env_var('DBT_IRIS_HOST', 'localhost') }}"
+      port: "{{ env_var('DBT_IRIS_PORT', '1972') | as_number }}"
+      database: USER # the IRIS namespace
+      username: "{{ env_var('DBT_IRIS_USER', '_SYSTEM') }}"
+      password: "{{ env_var('DBT_IRIS_PASS', 'SYS') }}"
+      schema: jaffle_shop
+      threads: 4

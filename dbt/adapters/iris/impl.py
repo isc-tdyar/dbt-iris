@@ -379,9 +379,9 @@ class IRISAdapter(SQLAdapter):
                 raise
             logger.warning(
                 "dbt-iris: could not install the HASH() SQL function that snapshots use: this "
-                "IRIS user may not create functions with ObjectScript code. Models, seeds and "
-                "tests run; snapshots need a user with the %Developer role, or HASH() installed "
-                "once by one."
+                "IRIS user may not create functions with ObjectScript code. SQL models, seeds "
+                "and tests run; snapshots and Python models need a user with the %Developer "
+                "role (for snapshots, HASH() installed once by such a user is enough)."
             )
 
     def drop_schema(self, schema_relation) -> None:
