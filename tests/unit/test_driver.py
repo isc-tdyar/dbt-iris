@@ -136,3 +136,26 @@ class TestClassLockRetry(unittest.TestCase):
         self.assertFalse(
             _is_class_lock_conflict(Exception("SQLCODE -30 table not found"), "drop table x")
         )
+
+    def test_cached_query_lock_timeout_during_prepare_is_retryable_for_any_statement(self):
+        # IRIS's adaptive mode tunes a table on first use and a background worker regenerates
+        # the stale cached queries holding their metadata lock; a Prepare meanwhile times out.
+        # The statement never ran, so it is safe to send again (measured on 2026.1 to 2026.3).
+        from dbt.adapters.iris.connections import _is_class_lock_conflict
+
+        timeout = Exception(
+            "<SQL ERROR>; Details: [SQLCODE: <-114>:<One or more matching rows is locked by "
+            "another user>] [Location: <Prepare>] [%msg: <Lock Timeout attempting to acquire "
+            "shared lock on Cached Query metadata during Prepare()>]"
+        )
+        self.assertTrue(_is_class_lock_conflict(timeout, "select count(*) from x"))
+        self.assertTrue(_is_class_lock_conflict(timeout, "insert into x select * from y"))
+
+    def test_a_row_lock_while_executing_is_not_retried(self):
+        from dbt.adapters.iris.connections import _is_class_lock_conflict
+
+        row_lock = Exception(
+            "[SQLCODE: <-114>:<One or more matching rows is locked by another user>] "
+            "[Location: <ServerLoop - Query Fetch>]"
+        )
+        self.assertFalse(_is_class_lock_conflict(row_lock, "update x set a = 1"))
