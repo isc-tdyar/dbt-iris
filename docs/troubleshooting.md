@@ -18,6 +18,16 @@ now belongs to `intersystems-irispython`, the driver 2.0.0 depends on.
 python -m pip install --force-reinstall --no-deps intersystems-irispython
 ```
 
+### `ERROR: No matching distribution found for intersystems-irispython`
+
+**Cause.** `pip` found no package of the InterSystems driver for this platform. The driver ships
+wheels for Linux with glibc (x86-64 and ARM64), macOS and Windows, and no source package, so it
+cannot install on Alpine Linux (musl), PyPy or other platforms. dbt-iris 1.9.x bundled a
+pure-Python driver and installed anywhere.
+
+**Fix.** Use a glibc-based Python, for example the `python:3.12-slim` image instead of
+`python:3.12-alpine`.
+
 ### `dbt-iris: the profile setting driver = 'vendored' was removed in dbt-iris 2.0.0`
 
 The full message continues: "The adapter now connects only through intersystems-irispython
@@ -161,11 +171,23 @@ return the upper-case form, and `'female' = 'Female'` is true.
 `iris_collation: exact`, which makes their string columns keep case and compare case-sensitively,
 as other warehouses do.
 
-### An aggregate model returns one row where it should return many
+### `dbt-iris: GROUP BY 1: IRIS reads a number in GROUP BY as a constant, not as a column position`
 
-**Cause.** The model groups with a column number, `group by 1` (or `dbt_utils.group_by(n)`, which
-writes that). IRIS reads a number in `GROUP BY` as a constant, so every row falls into one group.
-There is no error.
+The message goes on: "so every row falls into one group (or, next to named columns, the number is
+ignored), and it raises no error. Name the columns or expressions in GROUP BY instead, for example
+group by status instead of group by 1."
+
+**Cause.** The model groups by a column number. Other warehouses read `group by 1` as the first
+column; IRIS reads it as the constant 1, as its SQL reference documents. `dbt_utils.group_by(n)`
+writes this form.
+
+**Fix.** Name the columns, or repeat their expressions, in `GROUP BY`. `ORDER BY 1` is fine.
+
+### An aggregate returns one row where it should return many
+
+**Cause.** SQL run outside dbt-iris (in a SQL shell, a BI tool or a hook that bypasses the adapter)
+groups with a column number, `group by 1`. IRIS reads a number in `GROUP BY` as a constant, so
+every row falls into one group, with no error. dbt-iris refuses this in models.
 
 **Fix.** Name the columns in `GROUP BY`, or repeat their expressions. `ORDER BY 1` is fine. See
 [IRIS SQL differences](iris-sql.md#group-by-1-groups-by-the-number-1).
