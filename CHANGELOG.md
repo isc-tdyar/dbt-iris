@@ -34,8 +34,9 @@ step and, for some incremental models, one full refresh: see
 - Common table expressions with a column list work. The 3.x driver spoke an older xDBC protocol
   and rewrote most CTEs into subqueries on the client, and IRIS refused the ones it left, such as
   a CTE with a column list. The adapter now hoists leading CTEs above the `select ... from (...)`
-  wrappers dbt uses for tests and column lookup, and flattens nested CTEs (ephemeral models with
-  their own CTEs) before `CREATE VIEW` and `CREATE TABLE AS`, because IRIS accepts neither shape.
+  wrappers dbt uses for tests and column lookup, and flattens nested CTEs (ephemeral models with their own CTEs) and lifts a `WITH` out of a
+  subquery (derived table, `IN`, `UNION` branch, scalar subquery) before `CREATE VIEW` and
+  `CREATE TABLE AS`, because IRIS accepts none of these shapes.
 - Python models run through `exec` of their base64-encoded code inside the IRIS stored procedure.
   IRIS re-indents every line of a `LANGUAGE PYTHON` body, which added tabs to the continuation
   lines of multi-line strings, and 1.9.x deleted every line starting with `#`, including lines
@@ -65,6 +66,8 @@ step and, for some incremental models, one full refresh: see
 - A `table` or `incremental` model whose `UNION` gives a column a `DATE` or `TIME` in one branch
   and another type in another fails with a message naming the column. IRIS would store the
   values as internal numbers (`'66154'` for 2022-02-14) without an error.
+- A statement with a column number in `GROUP BY` (`group by 1`) fails with a message. IRIS reads
+  the number as a constant and would put every row into one group, without an error.
 - `iris_collation: exact` for seeds: string columns keep their case in `GROUP BY` and compare
   case-sensitively, as on other warehouses. The default is unchanged.
 - `merge` honours `merge_update_columns`, `merge_exclude_columns` and `incremental_predicates`,

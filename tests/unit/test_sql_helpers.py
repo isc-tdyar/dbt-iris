@@ -192,6 +192,91 @@ select name, id from my_other_cool_cte"""
         self.assertTrue(out.rstrip().endswith("select name, id from my_other_cool_cte"))
 
 
+class TestHoistCtesOutOfSubqueries(unittest.TestCase):
+    """IRIS refuses a WITH inside a subquery: a derived table, IN (...), a UNION branch or a
+    scalar subquery (SQLCODE -1 or -12, 2026.1 to 2026.3). 1.9.x's bundled driver rewrote these on
+    the client. The adapter lifts the inner CTEs into the statement's top-level WITH: before the
+    top-level CTE that contains them, or after all of them when they are in the main query."""
+
+    def _norm(self, sql):
+        return " ".join(sql.split())
+
+    def test_derived_table(self):
+        out = flatten_nested_ctes("select s.a from (with x as (select 1 as a) select a from x) s")
+        self.assertEqual(
+            self._norm(out), "with x as (select 1 as a) select s.a from (select a from x) s"
+        )
+
+    def test_in_subquery(self):
+        out = flatten_nested_ctes(
+            "select 1 as one where 1 in (with x as (select 1 as a) select a from x)"
+        )
+        self.assertEqual(
+            self._norm(out),
+            "with x as (select 1 as a) select 1 as one where 1 in (select a from x)",
+        )
+
+    def test_scalar_subquery(self):
+        out = flatten_nested_ctes("select (with x as (select 1 as a) select max(a) from x) as m")
+        self.assertEqual(
+            self._norm(out), "with x as (select 1 as a) select (select max(a) from x) as m"
+        )
+
+    def test_union_branch(self):
+        out = flatten_nested_ctes(
+            "select 0 as a union all select a from (with x as (select 1 as a) select a from x) s"
+        )
+        self.assertEqual(
+            self._norm(out),
+            "with x as (select 1 as a) select 0 as a union all select a from (select a from x) s",
+        )
+
+    def test_inside_a_top_level_cte_goes_before_that_cte(self):
+        out = flatten_nested_ctes(
+            "with base as (select 5 as b), t as (select * from (with x as (select b as a from base) "
+            "select a from x) s) select * from t"
+        )
+        low = self._norm(out).lower()
+        self.assertLess(low.find("base as ("), low.find("x as ("))
+        self.assertLess(low.find("x as ("), low.find("t as ("))
+        self.assertIn("t as (select * from (select a from x) s)", low)
+        self.assertEqual(low.count("with "), 1)
+
+    def test_in_the_main_query_goes_after_the_top_level_ctes(self):
+        out = flatten_nested_ctes(
+            "with base as (select 5 as b) select * from (with x as (select b as a from base) "
+            "select a from x) s"
+        )
+        self.assertEqual(
+            self._norm(out),
+            "with base as (select 5 as b), x as (select b as a from base) "
+            "select * from (select a from x) s",
+        )
+
+    def test_a_name_already_in_use_is_left_alone(self):
+        sql = (
+            "with x as (select 2 as a) select * from (with x as (select 1 as a) select a from x) s"
+        )
+        self.assertEqual(flatten_nested_ctes(sql), sql)
+
+    def test_cte_column_lists_are_kept(self):
+        out = flatten_nested_ctes("select * from (with x(a) as (select 1) select a from x) s")
+        self.assertEqual(
+            self._norm(out), "with x(a) as (select 1) select * from (select a from x) s"
+        )
+
+    def test_with_in_strings_and_comments_is_ignored(self):
+        sql = "select '(with x as (select 1))' as s /* (with y as (select 2)) */ from t"
+        self.assertEqual(flatten_nested_ctes(sql), sql)
+
+    def test_inner_recursive_makes_the_statement_recursive(self):
+        out = flatten_nested_ctes(
+            "select n from (with recursive r(n) as (select 1 union all select n + 1 from r "
+            "where n < 3) select n from r) s"
+        )
+        self.assertTrue(out.lower().startswith("with recursive r(n) as ("), out)
+
+
 class TestFlattenKeepsRecursive(unittest.TestCase):
     """An ephemeral model that is a recursive CTE, injected into its parent (spec 18 FR-16)."""
 

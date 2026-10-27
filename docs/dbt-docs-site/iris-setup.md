@@ -30,7 +30,8 @@ python -m pip install dbt-core dbt-iris
 
 `pip install dbt-iris` also installs `intersystems-irispython`, the InterSystems DB-API driver
 the adapter connects through. dbt-iris 2.0.0 needs dbt-core 1.10 or later, Python 3.10 or later
-and InterSystems IRIS 2026.1 or later. It is tested on IRIS 2026.1, 2026.2 and 2026.3.
+and InterSystems IRIS 2026.1 or later. It is tested on IRIS 2026.1, 2026.2 and 2026.3. The
+InterSystems driver has no package for Alpine Linux (musl); use a glibc-based Python image.
 
 ## Connecting to InterSystems IRIS
 

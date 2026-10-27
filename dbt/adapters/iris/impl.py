@@ -15,6 +15,7 @@ from dbt.adapters.iris import IRISColumn
 from dbt.adapters.iris import IRISRelation
 from dbt.adapters.iris import capabilities
 from dbt.adapters.iris import materialized_view
+from dbt.adapters.iris import union_types
 from dbt.adapters.iris import connections
 from dbt.adapters.iris.connections import _server_key
 
@@ -171,6 +172,93 @@ def split_leading_ctes(sql: str) -> Tuple[str, str]:
     return sql[:close], body
 
 
+_WITH_KW = re.compile(r"with(?:\s+recursive)?\b", re.IGNORECASE)
+_RECURSIVE_KW = re.compile(r"with\s+recursive\b", re.IGNORECASE)
+_CTE_NAME = re.compile(r'\s*("[^"]*"|[\w%$]+)')
+_CTE_AS = re.compile(r"\s*as\s*\(", re.IGNORECASE)
+
+
+def _skip_space(text: str, i: int) -> int:
+    while i < len(text) and text[i].isspace():
+        i += 1
+    return i
+
+
+def _with_list(sql: str, masked: str, close_of: dict, start: int):
+    """Parse the WITH list starting at start: (recursive, [(cte start, cte end, name, body
+    open)], end), or None when the text there is not a WITH list."""
+    m = _WITH_KW.match(masked, start)
+    if not m:
+        return None
+    recursive = bool(_RECURSIVE_KW.match(masked, start))
+    i, ctes = m.end(), []
+    while True:
+        name = _CTE_NAME.match(sql, i)
+        if not name:
+            return None
+        cte_start, i = name.start(1), name.end()
+        j = _skip_space(masked, i)
+        if masked.startswith("(", j):  # a column list
+            i = close_of.get(j, j) + 1
+        as_paren = _CTE_AS.match(masked, i)
+        if not as_paren:
+            return None
+        end = close_of.get(as_paren.end() - 1)
+        if end is None:
+            return None
+        ctes.append((cte_start, end + 1, name.group(1).strip('"').lower(), as_paren.end() - 1))
+        i = _skip_space(masked, end + 1)
+        if not masked.startswith(",", i):
+            return recursive, ctes, end + 1
+        i += 1
+
+
+def _hoist_subquery_ctes(sql: str) -> str:
+    """Lift a WITH out of a subquery (derived table, IN, UNION branch, scalar subquery) into the
+    statement's top-level WITH, which IRIS accepts. A subquery whose CTE names are already in use
+    is left alone: renaming would mean rewriting its references."""
+    for _ in range(100):
+        masked = union_types._mask(sql)
+        close_of = dict(union_types._pairs(masked))
+        lead = _skip_space(masked, 0)
+        top = _with_list(sql, masked, close_of, lead)
+        top_ctes = top[1] if top else []
+        top_names = {cte[2] for cte in top_ctes}
+        top_bodies = {cte[3] for cte in top_ctes}  # nested CTE bodies: flatten_nested_ctes
+        candidates = [
+            (o, c) for o, c in close_of.items()
+            if o not in top_bodies and _WITH_KW.match(masked, _skip_space(masked, o + 1))
+        ]  # fmt: skip
+        innermost = [
+            (o, c) for o, c in candidates
+            if not any(o < o2 and c2 < c for o2, c2 in candidates)
+        ]  # fmt: skip
+        changed = False
+        for o, c in sorted(innermost, reverse=True):
+            inner = _with_list(sql, masked, close_of, _skip_space(masked, o + 1))
+            if not inner or inner[2] > c:
+                continue
+            inner_recursive, inner_ctes, inner_end = inner
+            if {cte[2] for cte in inner_ctes} & top_names:
+                continue
+            ctes_text = ", ".join(sql[cte[0] : cte[1]].strip() for cte in inner_ctes)
+            out = sql[: o + 1] + sql[inner_end:c].strip() + sql[c:]
+            owner = next((cte[0] for cte in top_ctes if cte[0] <= o < cte[1]), None)
+            if owner is not None:
+                out = out[:owner] + ctes_text + ", " + out[owner:]
+            elif top:
+                out = out[: top[2]] + ", " + ctes_text + out[top[2] :]
+            else:
+                out = out[:lead] + "with " + ctes_text + " " + out[lead:]
+            if inner_recursive and not (top and top[0]):
+                out = re.sub(r"^(\s*)with\b", r"\1with recursive", out, count=1, flags=re.I)
+            sql, changed = out, True
+            break
+        if not changed:
+            return sql
+    return sql
+
+
 def flatten_nested_ctes(sql: str) -> str:
     """Hoist CTEs defined inside another CTE's body into the outer WITH list.
 
@@ -181,6 +269,7 @@ def flatten_nested_ctes(sql: str) -> str:
     placed before the CTE that referenced them, preserving order. SQL without
     a leading WITH, or without nesting, is returned unchanged.
     """
+    sql = _hoist_subquery_ctes(sql)
     parsed = _SqlScanner(sql).parse_leading_with()
     if parsed is None:
         return sql

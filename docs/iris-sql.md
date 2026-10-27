@@ -17,8 +17,15 @@ select status, count(*) from orders group by 1      -- one row, the count of all
 select status, count(*) from orders group by status -- one row per status
 ```
 
-Name the columns (or repeat the expressions) in `GROUP BY`. `dbt_utils.group_by(n)` generates
-`group by 1, 2, ...`, so do not use it on IRIS. `ORDER BY 1` does sort by the first column.
+In a list with named columns the number is ignored: `group by 1, city` groups by `city` alone, and
+the first column's value comes from an arbitrary row of each group. The IRIS SQL reference
+documents this ("You cannot specify a field by column number; this is interpreted as a literal and
+returns one row").
+
+dbt-iris refuses any statement with a number in `GROUP BY`, with a message, instead of letting it
+return wrong results. Name the columns (or repeat the expressions) in `GROUP BY`.
+`dbt_utils.group_by(n)` generates `group by 1, 2, ...`, so do not use it on IRIS. `ORDER BY 1` does
+sort by the first column.
 
 ### A `UNION` that mixes `DATE` or `TIME` with another type
 
@@ -86,9 +93,10 @@ step needs one type.
 You do not need to change SQL for these; they are listed so that the SQL you see in IRIS's logs
 makes sense.
 
-- **A `WITH` clause inside a subquery, or one CTE nested inside another** (an ephemeral model
-  that has its own CTEs). IRIS accepts neither, so the adapter moves the CTEs to the top of the
-  statement.
+- **A `WITH` clause inside a subquery** (a derived table, `IN (...)`, a `UNION` branch or a scalar
+  subquery), **or one CTE nested inside another** (an ephemeral model that has its own CTEs). IRIS
+  accepts neither, so the adapter moves the CTEs to the statement's top-level `WITH`. If a moved
+  CTE's name is already used there, the statement is sent as written and IRIS's error shows.
 - **`merge`** runs as `UPDATE ... FROM` for matched rows and `INSERT ... WHERE NOT EXISTS` for new
   ones, and switches to `MERGE` on a server that accepts it.
 - **Seeds** load with batched single-row inserts.

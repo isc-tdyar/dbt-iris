@@ -16,6 +16,7 @@ from dbt.adapters.events.types import ConnectionUsed, SQLQuery, SQLQueryStatus
 from dbt_common.helper_types import Port
 
 from dbt.adapters.iris import capabilities
+from dbt.adapters.iris import group_by_numbers
 from dbt.adapters.iris import union_types
 from mashumaro.jsonschema.annotations import Maximum, Minimum
 from typing_extensions import Annotated
@@ -240,6 +241,7 @@ class IRISConnectionManager(SQLConnectionManager):
                 lambda: capabilities.server_version(_server_key(connection), connection.handle),
             )
             if bindings is None:
+                group_by_numbers.check(sql)
                 union_types.check(sql, lambda q: _describe(connection.handle, q))
             cursor = connection.handle.cursor()
             many = (

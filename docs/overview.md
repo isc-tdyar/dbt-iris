@@ -101,11 +101,13 @@ needs as few changes as possible.
   and `WITH RECURSIVE`, with probes that change nothing. `merge` uses `MERGE` when it can. A model
   with `WITH RECURSIVE` on a server without recursive CTEs fails before it runs, with a message
   naming the IRIS version.
-- **CTEs where IRIS refuses them.** IRIS does not accept a `WITH` clause inside a derived table,
-  or one CTE nested inside another. The adapter moves them to the top of the statement.
+- **CTEs where IRIS refuses them.** IRIS does not accept a `WITH` clause inside a subquery, or
+  one CTE nested inside another. The adapter moves them to the top of the statement.
 - **UNIONs that IRIS would store wrongly.** Before building a table from a `UNION`, the adapter
   reads each branch's column types. A column that is `DATE` or `TIME` in one branch and another
   type in another fails the model with a message, because IRIS would store the dates as numbers.
+- **Column numbers in `GROUP BY`.** IRIS reads `GROUP BY 1` as the constant 1, so the adapter
+  refuses it with a message instead of returning one group.
 - **Locks held by another process.** DDL that meets another process's class lock is retried.
 - **Cached queries after a column change.** After adding or dropping columns, the adapter clears
   the table's cached queries, so a query another connection prepared earlier does not fail.

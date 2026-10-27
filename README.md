@@ -60,15 +60,18 @@ whole project, [`examples/jaffle_shop`](examples/jaffle_shop), step by step.
 
 ## Supported versions
 
-| Component                 | Supported       | Tested                              |
-| ------------------------- | --------------- | ----------------------------------- |
-| dbt-core                  | 1.10 or later   | 1.11 and 1.12                       |
-| Python                    | 3.10 or later   | 3.10, 3.11 and 3.12                 |
-| `intersystems-irispython` | 5.4 or later    | 5.4.1                               |
-| InterSystems IRIS         | 2026.1 or later | 2026.1, 2026.2 and 2026.3 (preview) |
+| Component                 | Supported                                         | Tested                              |
+| ------------------------- | ------------------------------------------------- | ----------------------------------- |
+| dbt-core                  | 1.10 or later                                     | 1.11 and 1.12                       |
+| Python                    | 3.10 or later                                     | 3.10, 3.11 and 3.12                 |
+| `intersystems-irispython` | 5.4 or later                                      | 5.4.1                               |
+| InterSystems IRIS         | 2026.1 or later                                   | 2026.1, 2026.2 and 2026.3 (preview) |
+| Platform                  | Linux (glibc) on x86-64 and ARM64, macOS, Windows | Linux x86-64 and ARM64              |
 
 dbt's adapter test suites pass in full on IRIS 2026.1.0.234, 2026.2.0.221 and 2026.3.0L.196.
-dbt-core 1.10 and Python 3.10 are the minimums; dbt Fusion is [in preview](docs/fusion.md).
+dbt-core 1.10 and Python 3.10 are the minimums; dbt Fusion is [in preview](docs/fusion.md). The
+InterSystems driver ships no package for Alpine Linux (musl), so dbt-iris does not install there;
+use a glibc-based image such as `python:3.12-slim`.
 
 ## What works
 
@@ -84,7 +87,8 @@ dbt-core 1.10 and Python 3.10 are the minimums; dbt Fusion is [in preview](docs/
 IRIS SQL differs from other warehouses in a few places. These are the ones that matter most; the
 [IRIS SQL page](docs/iris-sql.md) has the full list with what to write instead.
 
-- **`GROUP BY 1` groups by the number 1.** Name the columns. `ORDER BY 1` works.
+- **`GROUP BY 1` groups by the number 1** on IRIS, not by the first column, so the adapter refuses
+  a `GROUP BY` with a column number. Name the columns. `ORDER BY 1` works.
 - **Strings compare without regard to case** by default, and `GROUP BY` returns the upper-case
   form. Use `%EXACT(col)`, or `iris_collation: exact` on seeds.
 - **A `UNION` that mixes `DATE` or `TIME` with another type** would be stored wrongly, so the

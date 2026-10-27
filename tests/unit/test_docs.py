@@ -83,6 +83,7 @@ class TestReadme(unittest.TestCase):
             self.assertIn(f"`{strategy}`", README, strategy)
         self.assertIn("WITH RECURSIVE", README)
         self.assertIn("overlapping", README)
+        self.assertIn("Alpine", README)
 
     def test_no_internal_ticket_keys(self):
         self.assertIsNone(re.search(r"\bDP-\d{5,}", README))
@@ -176,6 +177,8 @@ class TestGuide(unittest.TestCase):
             "Invalid number of parameters",
             "#5864",  # overlapping runs
             "Access Denied",
+            "IRIS reads a number in GROUP BY as a constant",
+            "No matching distribution found for intersystems-irispython",
         ):
             self.assertIn(needle, text, needle)
 
