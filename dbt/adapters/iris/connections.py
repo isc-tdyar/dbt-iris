@@ -54,11 +54,16 @@ _LOCK_ERRORS = ("ERROR #5864", "ERROR #5803", "open for editing")
 # missing for a moment (IRIS 2026.2).
 _TRANSIENT_DDL_ERRORS = ("ERROR #5351",)
 _DDL = re.compile(r"^\s*(/\*.*?\*/\s*)*(create|drop|alter)\b", re.IGNORECASE | re.DOTALL)
+# IRIS's adaptive mode tunes a table the first time it is queried, and a background worker then
+# regenerates the table's stale cached queries while holding their metadata lock. A Prepare in
+# that window fails with SQLCODE -114 (IRIS 2026.1 to 2026.3). The statement never ran, so any
+# statement is safe to send again.
+_PREPARE_LOCK_TIMEOUT = "Lock Timeout attempting to acquire shared lock on Cached Query metadata"
 
 
 def _is_class_lock_conflict(exc: BaseException, sql: str = "") -> bool:
     text = str(exc)
-    if any(marker in text for marker in _LOCK_ERRORS):
+    if any(marker in text for marker in _LOCK_ERRORS) or _PREPARE_LOCK_TIMEOUT in text:
         return True
     return bool(_DDL.match(sql)) and any(marker in text for marker in _TRANSIENT_DDL_ERRORS)
 
@@ -262,9 +267,7 @@ class IRISConnectionManager(SQLConnectionManager):
                 except Exception as e:
                     if attempt == _LOCK_RETRIES or not _is_class_lock_conflict(e, sql):
                         raise
-                    logger.debug(
-                        f"dbt-iris: class lock held by another process, retry {attempt + 1}"
-                    )
+                    logger.debug(f"dbt-iris: lock held by another process, retry {attempt + 1}")
                     time.sleep(min(0.25 * (2**attempt), 4.0))
 
             fire_event(
