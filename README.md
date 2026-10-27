@@ -1,50 +1,24 @@
 # dbt-iris
 
 `dbt-iris` is the [dbt](https://www.getdbt.com/) adapter for
-[InterSystems IRIS](https://www.intersystems.com/data-platform/). It lets you build tables, views,
-incremental models, snapshots and Python models in IRIS with dbt, the same way you would on any
-other warehouse. This README covers dbt-iris 2.0.0. It is maintained by CaretDev (Dmitry
-Maslennikov) and contributors.
+[InterSystems IRIS](https://www.intersystems.com/data-platform/). With it, dbt builds tables,
+views, incremental models, snapshots, seeds and Python models in IRIS, and runs your tests there.
+This README covers dbt-iris 2.0.0, maintained by CaretDev (Dmitry Maslennikov) and contributors.
 
-If you know dbt but not IRIS, read [How dbt names map to IRIS](#how-dbt-names-map-to-iris) and
-[IRIS SQL notes](#iris-sql-notes) first: they are where IRIS differs from the warehouses you know.
-Upgrading from 1.9.x? Read [Upgrading from 1.9.x](#upgrading-from-19x) before you run `pip`.
+The [documentation](docs/README.md) has the full guide. Upgrading from 1.9.x? Read
+[Upgrading from 1.9.x](#upgrading-from-19x) before you run `pip`.
 
-## Install
+## Five-minute start
+
+Install dbt and the adapter. `pip` also installs `intersystems-irispython`, the InterSystems
+driver the adapter connects through:
 
 ```shell
 python -m pip install dbt-core dbt-iris
 ```
 
-`pip` also installs `intersystems-irispython`, the InterSystems DB-API driver the adapter
-connects through.
-
-## Supported versions
-
-| Component                 | Supported       | Tested                                         |
-| ------------------------- | --------------- | ---------------------------------------------- |
-| dbt-core                  | 1.10 or later   | 1.11 and 1.12                                  |
-| Python                    | 3.10 or later   | 3.10, 3.11 and 3.12                            |
-| `intersystems-irispython` | 5.4 or later    | 5.4.1                                          |
-| InterSystems IRIS         | 2026.1 or later | 2026.1, 2026.2 and 2026.3 (preview), see below |
-
-dbt's adapter test suites pass in full on each of these IRIS builds:
-
-| IRIS             | Build tested  |
-| ---------------- | ------------- |
-| 2026.1           | 2026.1.0.234  |
-| 2026.2           | 2026.2.0.221  |
-| 2026.3 (preview) | 2026.3.0L.196 |
-
-Where IRIS SQL behaves differently from other warehouses, [IRIS SQL notes](#iris-sql-notes) says
-how, and what to write instead.
-
-None of these releases accepts recursive CTEs; see [Recursive CTEs](#recursive-ctes).
-
-## Start InterSystems IRIS locally
-
-This repository's `docker-compose.yml` starts IRIS Community. Its Dockerfile adds the packages
-Python models need inside IRIS:
+Start IRIS Community with this repository's `docker-compose.yml` (its Dockerfile adds what Python
+models need inside IRIS):
 
 ```yml
 services:
@@ -63,13 +37,8 @@ services:
 docker compose up -d
 ```
 
-dbt connects on port 1972, the IRIS superserver. The Management Portal is at
-[http://localhost:52773/csp/sys/UtilHome.csp](http://localhost:52773/csp/sys/UtilHome.csp). The
-login is `_SYSTEM` / `SYS`.
-
-## Configure dbt
-
-`~/.dbt/profiles.yml`:
+Add a profile to `~/.dbt/profiles.yml`. In dbt-iris, `database` is the IRIS namespace and `schema`
+is the SQL schema the models are built in:
 
 ```yaml
 my_project:
@@ -79,116 +48,70 @@ my_project:
       type: iris
       hostname: localhost
       port: 1972
-      database: USER # the IRIS namespace; `namespace` also works
+      database: USER
       username: _SYSTEM
       password: SYS
       schema: dbt
       threads: 4
 ```
 
-`dbt init` asks for the same settings, and `dbt debug` checks the connection. Every setting and
-its aliases are listed on the [setup page](docs/dbt-docs-site/iris-setup.md).
+Check it with `dbt debug`, then `dbt build`. The [tutorial](docs/tutorial.md) walks through a
+whole project, [`examples/jaffle_shop`](examples/jaffle_shop), step by step.
 
-The user needs the SQL privileges to create tables and views in `schema`. Snapshots also need a
-`HASH` SQL function, written in ObjectScript, that the adapter installs when it creates a schema.
-IRIS refuses `CREATE FUNCTION` with code to a user who has only SQL privileges; the `%Developer`
-role is enough. Without it, dbt warns and runs everything except snapshots.
+## Supported versions
 
-### How dbt names map to IRIS
+| Component                 | Supported       | Tested                              |
+| ------------------------- | --------------- | ----------------------------------- |
+| dbt-core                  | 1.10 or later   | 1.11 and 1.12                       |
+| Python                    | 3.10 or later   | 3.10, 3.11 and 3.12                 |
+| `intersystems-irispython` | 5.4 or later    | 5.4.1                               |
+| InterSystems IRIS         | 2026.1 or later | 2026.1, 2026.2 and 2026.3 (preview) |
 
-| dbt                       | IRIS                                                                              |
-| ------------------------- | --------------------------------------------------------------------------------- |
-| `database`                | Namespace, such as `USER`. Not an IRIS database, which is a namespace's data file |
-| `schema`                  | SQL schema, the name before the dot in `schema.table`                             |
-| `materialized_view` model | A table rebuilt on every run, or a view; IRIS has no materialized views           |
+dbt's adapter test suites pass in full on IRIS 2026.1.0.234, 2026.2.0.221 and 2026.3.0L.196.
+dbt-core 1.10 and Python 3.10 are the minimums; dbt Fusion is [in preview](docs/fusion.md).
 
-## Incremental strategies
+## What works
 
-- `append`: inserts the new rows.
-- `merge`: `MERGE` when the server accepts it, otherwise an `UPDATE` of matched rows and an
-  `INSERT` of new ones. No index on `unique_key` is needed. `merge_update_columns`,
-  `merge_exclude_columns` and `incremental_predicates` are honoured.
-- `delete+insert`: the default when `unique_key` is set.
-- `microbatch`: replaces each batch's `event_time` window.
+- **Materializations:** `table`, `view`, `incremental`, `ephemeral` and `materialized_view` (built
+  as a table or a view; IRIS has no materialized views), plus seeds, snapshots and tests.
+- **Incremental strategies:** `append`, `merge`, `delete+insert` (the default with a
+  `unique_key`) and `microbatch`. `merge` needs no index on `unique_key`.
+- **Snapshots:** `check` and `timestamp`, multi-column keys and all three `hard_deletes` modes.
+- **Python models:** run inside IRIS, in Embedded Python.
 
-`insert_overwrite` is not offered. The [configs page](docs/dbt-docs-site/iris-configs.md) says
-how each strategy runs on IRIS.
+## Before you write models
 
-## Seeds
+IRIS SQL differs from other warehouses in a few places. These are the ones that matter most; the
+[IRIS SQL page](docs/iris-sql.md) has the full list with what to write instead.
 
-Seed string columns follow the IRIS default and compare without regard to case. Set
-`iris_collation: exact` to make them keep their case in `GROUP BY` and compare case-sensitively,
-as on other warehouses. Tables and views built from the seed inherit it.
+- **`GROUP BY 1` groups by the number 1.** Name the columns. `ORDER BY 1` works.
+- **Strings compare without regard to case** by default, and `GROUP BY` returns the upper-case
+  form. Use `%EXACT(col)`, or `iris_collation: exact` on seeds.
+- **A `UNION` that mixes `DATE` or `TIME` with another type** would be stored wrongly, so the
+  adapter refuses to build a table from it and names the column. Cast every branch to one type.
+- **No `WITH RECURSIVE` or `MERGE`** on any release yet. The `merge` strategy works without
+  `MERGE`; a recursive model fails with a message naming the IRIS version.
+- **Snapshots and Python models need the `%Developer` role** (or equivalent) on top of SQL
+  privileges. Without it, dbt warns and runs the rest.
+- **Do not start overlapping runs of one project.** Two `dbt run` processes replacing the same
+  models at once can block each other on IRIS class locks and can damage the IRIS catalog.
 
-```yaml
-seeds:
-  my_project:
-    +iris_collation: exact
-```
+When something fails, the [troubleshooting page](docs/troubleshooting.md) lists the messages and
+their fixes.
 
-One IRIS issue comes with it: a view that groups by an `exact` column fails with SQLCODE -400 when
-it is used in `EXCEPT` or in a correlated `NOT EXISTS`, on every IRIS build tested. dbt's own data
-tests do not use either.
+## Documentation
 
-## Snapshots
+- [Overview](docs/overview.md): how dbt-iris works and what each materialization does in IRIS.
+- [Tutorial](docs/tutorial.md): from nothing to `dbt build` on the example project.
+- [Configuration](docs/configuration.md): every profile setting and model, seed and snapshot
+  config.
+- [IRIS SQL differences](docs/iris-sql.md): what to write differently for IRIS.
+- [Troubleshooting](docs/troubleshooting.md): error messages, causes and fixes.
+- [dbt Fusion (preview)](docs/fusion.md): what works today and what is missing.
+- [Contributing](docs/contributing.md): running the tests against IRIS in Docker.
 
-Snapshots support `check` and `timestamp` strategies, multi-column `unique_key`,
-`snapshot_meta_column_names`, `dbt_valid_to_current` and all three `hard_deletes` modes. They
-need no Embedded Python on the server: the adapter's `HASH` function is ObjectScript, and returns
-the same values as earlier releases, so existing snapshot history stays valid.
-
-## Python models
-
-Python models run in IRIS's Embedded Python. Install `pandas`, `sqlalchemy` and `sqlalchemy-iris`
-into IRIS's Python on the server, as this repository's Dockerfile does.
-
-## Recursive CTEs
-
-dbt never generates recursive SQL, so this only matters for models you write with
-`WITH RECURSIVE` yourself. Those need an IRIS release that supports recursive CTEs. On a server
-that does not, the model fails before it runs, with a message naming the IRIS version. The
-[configs page](docs/dbt-docs-site/iris-configs.md#recursive-ctes) shows a fixed-depth pattern
-that works on any IRIS.
-
-## IRIS SQL notes
-
-- **CTEs in subqueries.** IRIS does not accept a `WITH` clause inside a derived table, or a
-  `WITH` nested inside another CTE's body. The adapter rewrites both shapes, so ephemeral models
-  and models with their own CTEs work as tests, views and tables.
-- **Multi-row `VALUES`.** `INSERT ... VALUES (...), (...)` is not IRIS SQL. Seeds are loaded
-  with `executemany`; write your own inserts as `INSERT ... SELECT ... UNION ALL`.
-- **`UNION` of a `DATE` or `TIME` and another type.** Give every branch of a `UNION` the same
-  type. When one branch has a `DATE` and another has text or a number in the same column, a plain
-  query returns the right values, but IRIS stores the date's internal day number (`'66154'`) in a
-  table built from it, and a `TIME` as seconds (`'36672'`). The adapter checks each `UNION` branch
-  before it builds a `table` or `incremental` model, and fails the model with a message naming
-  the column instead. It cannot see a `POSIXTIME` column, or a `UNION` whose branches cannot
-  run on their own, such as one inside a correlated subquery.
-- **Case in strings.** IRIS string columns compare without regard to case by default:
-  `'female' = 'Female'` is true, and `GROUP BY` returns the upper-case form (`'FEMALE'`). Group by
-  `%EXACT(col)` to keep the original case, or set `iris_collation: exact` on seeds (see
-  [Seeds](#seeds)).
-- **Renaming views.** IRIS has no `ALTER VIEW ... RENAME`; the adapter recreates the view from its
-  definition instead.
-- **Materialized views.** IRIS has none. A `materialized_view` model is built as a table, rebuilt
-  on every `dbt run`. Set `iris_materialized_view_as: view` to build it as a view, or `table` to
-  keep the table without the warning that lists the models left on the default. For a large model
-  that is rebuilt often, `incremental` is cheaper.
-
-## Running dbt more than once at a time
-
-Temporary, intermediate and backup tables carry the dbt invocation id, so overlapping `dbt run`
-processes do not collide on them, and DDL that meets another process's lock is retried. Two runs
-replacing the same models at the same time can still block each other on IRIS class locks, and
-can damage the IRIS catalog. dbt does not support overlapping runs of one project: do not start a
-second `dbt run` on the same models while one is running.
-
-## dbt Fusion (preview)
-
-dbt-iris 2.0.0 carries the macros dbt Fusion, the new dbt engine, needs for IRIS: schema creation and lookup run as SQL macros, and seeds load as one bulk ingest instead of
-batched `INSERT`s. dbt-core runs exactly as before. Using it needs an IRIS ADBC driver and an IRIS
-adapter in dbt Fusion, and **neither is published yet**. Until they are, dbt-iris works with
-dbt-core only.
+The pages for docs.getdbt.com are drafted in [iris-setup](docs/dbt-docs-site/iris-setup.md) and
+[iris-configs](docs/dbt-docs-site/iris-configs.md).
 
 ## Upgrading from 1.9.x
 
@@ -222,7 +145,7 @@ dbt-core only.
 
 Everything else in [CHANGELOG.md](CHANGELOG.md) works without changes to your project.
 
-## Useful links
+## Links
 
 - [CHANGELOG.md](CHANGELOG.md)
 - [InterSystems Documentation](https://docs.intersystems.com/)

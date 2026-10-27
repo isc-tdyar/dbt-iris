@@ -139,6 +139,7 @@ class TestCreateSchemaWithoutCodePrivilege(unittest.TestCase):
         self.assertIn("HASH", message)
         self.assertIn("%Developer", message)
         self.assertIn("snapshot", message)
+        self.assertIn("Python models", message)
 
     def test_other_errors_still_fail(self):
         from dbt_common.exceptions import DbtDatabaseError

@@ -1,0 +1,20 @@
+name: jaffle_shop
+version: "1.0"
+config-version: 2
+profile: jaffle_shop
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+snapshot-paths: ["snapshots"]
+
+models:
+  jaffle_shop:
+    +materialized: table
+    staging:
+      +materialized: view
+
+seeds:
+  jaffle_shop:
+    # Seed string columns keep their case in GROUP BY and compare case-sensitively,
+    # as on other warehouses (see docs/configuration.md in the dbt-iris repository).
+    +iris_collation: exact

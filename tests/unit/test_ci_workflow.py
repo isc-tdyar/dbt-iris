@@ -63,6 +63,42 @@ class TestPythonModelsJob(unittest.TestCase):
         self.assertEqual(str(env.get("DBT_IRIS_PYTHON_MODELS")), "1")
 
 
+class TestExampleJob(unittest.TestCase):
+    """The tutorial's project, examples/jaffle_shop, builds against IRIS on every change."""
+
+    job = JOBS.get("example", {})
+
+    def test_iris_runs_as_a_service(self):
+        service = self.job["services"]["iris"]
+        self.assertEqual(
+            service["image"], "containers.intersystems.com/intersystems/iris-community:latest-cd"
+        )
+        self.assertIn("1972:1972", service["ports"])
+        self.assertIn("UnExpireUserPasswords", _run_text(self.job))
+
+    def test_installs_the_adapter_and_builds_the_example_twice(self):
+        text = _run_text(self.job)
+        self.assertIn("pip install -e .", text)
+        builds = [line for line in text.splitlines() if "dbt build" in line]
+        self.assertEqual(len(builds), 2, builds)
+        for line in builds:
+            self.assertIn("examples/jaffle_shop", line)
+
+    def test_profile_comes_from_the_environment(self):
+        env = dict(self.job.get("env", {}))
+        for step in self.job["steps"]:
+            env.update(step.get("env", {}))
+        self.assertEqual(env.get("DBT_IRIS_HOST"), "localhost")
+        self.assertEqual(str(env.get("DBT_IRIS_PORT")), "1972")
+        profile = yaml.safe_load((ROOT / "examples/jaffle_shop/profiles.yml").read_text())
+        dev = profile["jaffle_shop"]["outputs"]["dev"]
+        for key, var in (("hostname", "DBT_IRIS_HOST"), ("username", "DBT_IRIS_USER")):
+            self.assertIn(f"env_var('{var}'", str(dev[key]), key)
+
+    def test_the_build_waits_for_it(self):
+        self.assertIn("example", JOBS["build"]["needs"])
+
+
 class TestCodeQualityJob(unittest.TestCase):
     def test_supported_pythons_only(self):
         text = yaml.safe_dump(JOBS["code-quality"])

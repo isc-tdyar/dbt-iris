@@ -110,3 +110,77 @@ class TestIssue7DockerFiles(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+DOCS = ROOT / "docs"
+GUIDE_PAGES = (
+    "overview.md",
+    "tutorial.md",
+    "configuration.md",
+    "iris-sql.md",
+    "troubleshooting.md",
+    "fusion.md",
+    "contributing.md",
+)
+
+
+def _page(name):
+    return (DOCS / name).read_text()
+
+
+class TestGuide(unittest.TestCase):
+    """The user guide in docs/ (spec 18 follow-up, 2026-10-26)."""
+
+    def test_every_page_exists_and_is_linked_from_the_readme_and_the_index(self):
+        index = _page("README.md")
+        for name in GUIDE_PAGES:
+            self.assertTrue((DOCS / name).is_file(), name)
+            self.assertIn(f"docs/{name}", README, name)
+            self.assertIn(f"({name})", index, name)
+
+    def test_relative_links_resolve(self):
+        link = re.compile(r"\]\((?!https?://|#|mailto:)([^)#\s]+)")
+        for path in [ROOT / "README.md", *sorted(DOCS.glob("*.md"))]:
+            for target in link.findall(path.read_text()):
+                self.assertTrue((path.parent / target).exists(), f"{path.name}: {target}")
+
+    def test_no_internal_ticket_keys_in_the_guide(self):
+        for path in sorted(DOCS.glob("*.md")):
+            self.assertIsNone(re.search(r"\bDP-\d{5,}", path.read_text()), path.name)
+
+    def test_overview_has_a_diagram(self):
+        self.assertIn("```mermaid", _page("overview.md"))
+
+    def test_configuration_lists_every_setting(self):
+        text = _page("configuration.md")
+        for name in (
+            "hostname", "port", "database", "namespace", "username", "password", "schema",
+            "threads", "iris_materialized_view_as", "iris_collation", "incremental_strategy",
+            "unique_key", "merge_update_columns", "merge_exclude_columns",
+            "incremental_predicates", "on_schema_change", "hard_deletes", "column_types",
+        ):  # fmt: skip
+            self.assertIn(f"`{name}`", text, name)
+
+    def test_troubleshooting_covers_every_message_users_see(self):
+        text = _page("troubleshooting.md")
+        for needle in (
+            "has no attribute 'irissdk'",  # upgrade from 1.9.x deletes iris/__init__.py
+            "removed in dbt-iris 2.0.0",  # driver: vendored | sqlalchemy
+            "does not accept WITH RECURSIVE",
+            "in one UNION branch and",
+            "could not install the HASH() SQL function",
+            "CREATE FUNCTION with custom code",
+            "iris_materialized_view_as must be one of",
+            "iris_collation must be one of",
+            "IRIS has no materialized views",
+            "Invalid number of parameters",
+            "#5864",  # overlapping runs
+            "Access Denied",
+        ):
+            self.assertIn(needle, text, needle)
+
+    def test_tutorial_builds_the_example_project(self):
+        text = _page("tutorial.md")
+        self.assertIn("examples/jaffle_shop", text)
+        self.assertIn("dbt build", text)
+        self.assertTrue((ROOT / "examples" / "jaffle_shop" / "dbt_project.yml").is_file())

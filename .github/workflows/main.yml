@@ -164,11 +164,49 @@ jobs:
       - name: Python model tests
         run: python -m pytest -q -rs tests/functional/adapter/test_python_model.py tests/functional/adapter/test_hash.py
 
+  # The tutorial's project (docs/tutorial.md): dbt build twice, so the second run exercises the
+  # incremental model and the snapshot on existing tables.
+  example:
+    name: example project
+    runs-on: ubuntu-latest
+    services:
+      iris:
+        image: containers.intersystems.com/intersystems/iris-community:latest-cd
+        ports:
+          - 1972:1972
+    env:
+      DBT_IRIS_HOST: localhost
+      DBT_IRIS_PORT: "1972"
+      DBT_IRIS_USER: _SYSTEM
+      DBT_IRIS_PASS: SYS
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Wait for IRIS and unexpire the default passwords
+        run: |
+          for _ in $(seq 1 60); do
+            docker exec ${{ job.services.iris.id }} iris qlist | grep -q running && break
+            sleep 5
+          done
+          printf ' do ##class(Security.Users).UnExpireUserPasswords("*")\n halt\n' \
+            | docker exec -i ${{ job.services.iris.id }} iris session IRIS -U %SYS
+      - name: Install
+        run: |
+          pip install --upgrade pip
+          pip install -e . dbt-core
+      - name: Build the example project twice
+        run: |
+          dbt build --project-dir examples/jaffle_shop --profiles-dir examples/jaffle_shop
+          dbt build --project-dir examples/jaffle_shop --profiles-dir examples/jaffle_shop
+
   build:
     needs:
       - code-quality
       - functional
       - python-models
+      - example
     name: build packages
 
     runs-on: ubuntu-latest
