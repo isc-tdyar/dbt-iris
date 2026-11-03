@@ -71,9 +71,10 @@ except:
 
 try:
   from sqlalchemy import create_engine
-  import sqlalchemy_iris
+  import sqlalchemy_intersystems_iris
+  import iris.dbapi
 except:
-  raise Exception("Missing required dependencies: sqlalchemy, sqlalchemy-iris")
+  raise Exception("Missing required dependencies: sqlalchemy, sqlalchemy-intersystems-iris, intersystems-irispython-dx")
 
 class DataFrame(pandas.DataFrame):
     def limit(self, num):
@@ -86,7 +87,9 @@ class IRISSession:
     default_schema = 'SQLUser'
 
     def __init__(self) -> None:
-        self.engine = create_engine('iris+emb:///')
+        # submission_method: client passes the profile's connection as DBT_IRIS_CONNECT; inside
+        # IRIS the irispython-dx layer connects in-process with no arguments.
+        self.engine = create_engine('iris://', creator=globals().get('DBT_IRIS_CONNECT') or iris.dbapi.connect)
 
     def table(self, full_name) -> DataFrame:
         # dbt passes quoted relations: "schema"."table"

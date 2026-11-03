@@ -4,6 +4,7 @@ import re
 import agate
 from dbt_common.exceptions import MacroArgTypeError
 from dbt_common.exceptions import DbtRuntimeError
+from dbt.adapters.contracts.connection import AdapterResponse
 from dbt.adapters.base.relation import BaseRelation
 
 from dbt.adapters.sql import SQLAdapter
@@ -600,6 +601,14 @@ class IRISAdapter(SQLAdapter):
     def submit_python_job(self, parsed_model: dict, compiled_code: str):
         schema = parsed_model["schema"]
         identifier = parsed_model["alias"]
+        method = (parsed_model.get("config") or {}).get("submission_method") or "embedded"
+        if method == "client":
+            return self._run_python_model_in_client(schema, identifier, compiled_code)
+        if method != "embedded":
+            raise DbtRuntimeError(
+                f"dbt-iris: submission_method {method!r} is not one of 'embedded' (run the "
+                "model inside IRIS, the default) or 'client' (run it where dbt runs)"
+            )
 
         proc_name = f'"{schema}"."{identifier}__dbt_sp"'
         create_procedure = f"""
@@ -615,6 +624,17 @@ LANGUAGE PYTHON
         response, _ = self.execute(f"SELECT {proc_name}()", auto_begin=False, fetch=True)
         self.execute(f"drop procedure if exists {proc_name}", auto_begin=False, fetch=False)
         return response
+
+    def _run_python_model_in_client(self, schema: str, identifier: str, compiled_code: str):
+        """Run a Python model in the dbt process. Its session reaches IRIS through the profile's
+        own driver connection, which the generated code finds as DBT_IRIS_CONNECT."""
+        credentials = self.config.credentials
+        scope = {
+            "__name__": "__dbt_iris_python_model__",
+            "DBT_IRIS_CONNECT": lambda: connections.connect(credentials),
+        }
+        exec(compile(compiled_code, f"<python model {schema}.{identifier}>", "exec"), scope)
+        return AdapterResponse(_message="OK")
 
     def valid_incremental_strategies(self) -> List[str]:
         return ["append", "merge", "delete+insert", "microbatch"]
