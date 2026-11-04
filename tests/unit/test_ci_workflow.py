@@ -155,6 +155,23 @@ class TestCodeQualityJob(unittest.TestCase):
         self.assertIn("check-wheel-contents", text)
 
 
+class TestBuildJobPublishesOnlyOnPushOrRelease(unittest.TestCase):
+    """A manual run (workflow_dispatch) tests a branch; it must not tag, release or publish.
+
+    On 2026-11-04 a manual run on a fork branch created a v2.0.0 pre-release on the fork's
+    main and tried to publish to PyPI, because these steps ran on every event but a PR.
+    """
+
+    steps = {step.get("name"): step for step in JOBS["build"]["steps"]}
+
+    def test_release_and_publish_steps(self):
+        for name in ("Create Release", "Publish package"):
+            condition = self.steps[name]["if"]
+            self.assertIn("github.event_name == 'push'", condition, name)
+            self.assertIn("github.event_name == 'release'", condition, name)
+            self.assertNotIn("!=", condition, name)
+
+
 class TestTox(unittest.TestCase):
     def test_envlist(self):
         text = (ROOT / "tox.ini").read_text()
