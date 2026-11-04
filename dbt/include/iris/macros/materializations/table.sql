@@ -71,10 +71,29 @@ except:
 
 try:
   from sqlalchemy import create_engine
-  import sqlalchemy_intersystems_iris
-  import iris.dbapi
 except:
-  raise Exception("Missing required dependencies: sqlalchemy, sqlalchemy-intersystems-iris, intersystems-irispython-dx")
+  raise Exception("Missing required dependency: sqlalchemy")
+
+def _iris_engine():
+    # The dialect the environment has. With the irispython-dx layer: iris+dx:///, in-process
+    # inside IRIS with no password, or the profile's connection (DBT_IRIS_CONNECT) when the model
+    # runs in the dbt process (submission_method: client). Without it: the official dialect over
+    # the profile's connection in the dbt process, and inside IRIS sqlalchemy-iris's iris+emb,
+    # as in dbt-iris 2.0.0.
+    creator = globals().get('DBT_IRIS_CONNECT')
+    try:
+        import iris_dx  # noqa: F401
+    except ImportError:
+        pass
+    else:
+        return create_engine('iris+dx:///', **({'creator': creator} if creator else {}))
+    if creator:
+        return create_engine('iris://', creator=creator)
+    try:
+        import sqlalchemy_iris  # noqa: F401
+    except ImportError:
+        raise Exception("Missing required dependencies: sqlalchemy-iris, or intersystems-irispython-dx and sqlalchemy-intersystems-iris")
+    return create_engine('iris+emb:///')
 
 class DataFrame(pandas.DataFrame):
     def limit(self, num):
@@ -87,9 +106,7 @@ class IRISSession:
     default_schema = 'SQLUser'
 
     def __init__(self) -> None:
-        # submission_method: client passes the profile's connection as DBT_IRIS_CONNECT; inside
-        # IRIS the irispython-dx layer connects in-process with no arguments.
-        self.engine = create_engine('iris://', creator=globals().get('DBT_IRIS_CONNECT') or iris.dbapi.connect)
+        self.engine = _iris_engine()
 
     def table(self, full_name) -> DataFrame:
         # dbt passes quoted relations: "schema"."table"

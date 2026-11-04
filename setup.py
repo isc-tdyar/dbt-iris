@@ -36,6 +36,10 @@ setup(
         ]
     ),
     include_package_data=True,
+    extras_require={
+        # `driver: dx`: the irispython-dx layer, installed beside the official driver.
+        "dx": ["intersystems-irispython-dx>=0.1,<0.2"],
+    },
     install_requires=[
         "dbt-adapters>=1.15.2,<2.0",
         # add dbt-core to ensure backwards compatibility of installation, this is not a functional dependency

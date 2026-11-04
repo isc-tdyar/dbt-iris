@@ -39,8 +39,21 @@ def _fake_iris():
     return {"iris": pkg, "iris.dbapi": dbapi}, calls
 
 
-def _open(driver=None, env=None):
+def _fake_iris_dx():
+    """The irispython-dx layer installed beside the driver: its DB-API is iris_dx.dbapi."""
     mods, calls = _fake_iris()
+    dx_calls = []
+    dx = types.ModuleType("iris_dx.dbapi")
+    dx.connect = lambda **kw: dx_calls.append(kw) or "DX-HANDLE"
+    dx.SQLType = mods["iris.dbapi"].SQLType
+    pkg = types.ModuleType("iris_dx")
+    pkg.dbapi = dx
+    mods.update({"iris_dx": pkg, "iris_dx.dbapi": dx})
+    return mods, dx_calls
+
+
+def _open(driver=None, env=None, layer=False):
+    mods, calls = _fake_iris_dx() if layer else _fake_iris()
     conn = types.SimpleNamespace(state="init", credentials=_Creds(driver), handle=None)
     environ = {k: v for k, v in os.environ.items() if k != "DBT_IRIS_DRIVER"}
     if env is not None:
@@ -75,6 +88,31 @@ class TestConnectsThroughIrisDbapi(unittest.TestCase):
     def test_env_iris_is_still_accepted(self):
         conn, calls = _open(env="iris")
         self.assertEqual(conn.handle, "HANDLE")
+
+
+class TestTheDxDriverIsTheLayer(unittest.TestCase):
+    """`driver: dx` connects through the irispython-dx layer, installed beside the official
+    driver as iris_dx (irispython-dx ADR 0012), with autocommit on: dbt-iris drives its own
+    transactions, and the layer's default is off (irispython-dx ADR 0003, Q9)."""
+
+    def test_profile_dx_uses_iris_dx_dbapi_with_autocommit(self):
+        conn, calls = _open(driver="dx", layer=True)
+        self.assertEqual(conn.handle, "DX-HANDLE")
+        self.assertEqual(calls[0]["autoCommit"], True)
+        self.assertEqual(calls[0]["hostname"], "h")
+
+    def test_env_dx_is_accepted_too(self):
+        conn, calls = _open(env="dx", layer=True)
+        self.assertEqual(conn.handle, "DX-HANDLE")
+
+    def test_the_default_stays_the_official_driver_even_with_the_layer_installed(self):
+        conn, calls = _open(layer=True)
+        self.assertEqual(conn.handle, "HANDLE")
+
+    def test_dx_without_the_layer_says_how_to_install_it(self):
+        with self.assertRaises(FailedToConnectError) as ctx:
+            _open(driver="dx")
+        self.assertIn("dbt-iris[dx]", str(ctx.exception))
 
 
 class TestRemovedDriversAreRefused(unittest.TestCase):

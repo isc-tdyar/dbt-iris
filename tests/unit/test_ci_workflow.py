@@ -63,6 +63,50 @@ class TestPythonModelsJob(unittest.TestCase):
         self.assertEqual(str(env.get("DBT_IRIS_PYTHON_MODELS")), "1")
 
 
+def _env(job):
+    env = dict(job.get("env", {}))
+    for step in job.get("steps", []):
+        env.update(step.get("env", {}))
+    return env
+
+
+class TestPythonModelsClientJob(unittest.TestCase):
+    """submission_method: client runs the model where dbt runs, over the official dialect."""
+
+    job = JOBS.get("python-models-client", {})
+
+    def test_installs_where_dbt_runs_and_enables_the_test(self):
+        text = _run_text(self.job)
+        self.assertNotIn("mgr/python", text)
+        for package in ("pandas", "sqlalchemy-intersystems-iris"):
+            self.assertIn(package, text)
+        self.assertEqual(str(_env(self.job).get("DBT_IRIS_PYTHON_MODELS_CLIENT")), "1")
+        self.assertIn("tests/functional/adapter/test_python_model_client.py", text)
+
+
+class TestDxJob(unittest.TestCase):
+    """driver: dx, the irispython-dx layer, over the whole suite and both Python-model modes."""
+
+    job = JOBS.get("dx", {})
+
+    def test_runs_only_when_a_layer_wheel_is_configured(self):
+        # The layer is not on PyPI yet; the wheel's URL is a repository variable.
+        self.assertIn("vars.IRISPYTHON_DX_WHEEL", str(self.job.get("if", "")))
+
+    def test_the_layer_goes_where_dbt_runs_and_into_iris_python(self):
+        text = _run_text(self.job)
+        self.assertIn("IRISPYTHON_DX_WHEEL", text)
+        self.assertIn("mgr/python", text)
+        self.assertIn("sqlalchemy-intersystems-iris", text)
+        self.assertIn("tests/functional", text)
+
+    def test_selects_the_dx_driver_and_both_python_model_modes(self):
+        env = _env(self.job)
+        self.assertEqual(env.get("DBT_IRIS_DRIVER"), "dx")
+        self.assertEqual(str(env.get("DBT_IRIS_PYTHON_MODELS")), "1")
+        self.assertEqual(str(env.get("DBT_IRIS_PYTHON_MODELS_CLIENT")), "1")
+
+
 class TestExampleJob(unittest.TestCase):
     """The tutorial's project, examples/jaffle_shop, builds against IRIS on every change."""
 

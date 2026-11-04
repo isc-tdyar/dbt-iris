@@ -65,8 +65,11 @@ class TestRelease200(unittest.TestCase):
             ),
         )
 
-    def test_no_driver_extras(self):
-        self.assertFalse(_setup_call_kw("extras_require"))
+    def test_the_only_extra_is_the_dx_layer(self):
+        # `driver: dx` (irispython-dx ADR 0012): the layer installed beside the official driver.
+        self.assertEqual(
+            _setup_call_kw("extras_require"), {"dx": ["intersystems-irispython-dx>=0.1,<0.2"]}
+        )
 
     def test_pypi_page_is_the_readme_in_markdown(self):
         text = (ROOT / "setup.py").read_text()

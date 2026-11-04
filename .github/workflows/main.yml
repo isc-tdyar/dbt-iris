@@ -164,6 +164,87 @@ jobs:
       - name: Python model tests
         run: python -m pytest -q -rs tests/functional/adapter/test_python_model.py tests/functional/adapter/test_hash.py
 
+  # submission_method: client runs the model where dbt runs, through the official dialect.
+  python-models-client:
+    name: python-models (client)
+    runs-on: ubuntu-latest
+    services:
+      iris:
+        image: containers.intersystems.com/intersystems/iris-community:latest-preview
+        ports:
+          - 1972:1972
+    env:
+      DBT_IRIS_HOST: localhost
+      DBT_IRIS_PORT: "1972"
+      DBT_IRIS_USER: SuperUser
+      DBT_IRIS_PASS: SYS
+      DBT_IRIS_PYTHON_MODELS_CLIENT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Wait for IRIS and unexpire the default passwords
+        run: |
+          for _ in $(seq 1 60); do
+            docker exec ${{ job.services.iris.id }} iris qlist | grep -q running && break
+            sleep 5
+          done
+          printf ' do ##class(Security.Users).UnExpireUserPasswords("*")\n halt\n' \
+            | docker exec -i ${{ job.services.iris.id }} iris session IRIS -U %SYS
+      - name: Install
+        run: |
+          pip install --upgrade pip
+          pip install -e . pandas sqlalchemy-intersystems-iris dbt-tests-adapter "pytest~=7.4" pytest-dotenv flaky freezegun
+      - name: Python model tests
+        run: python -m pytest -q -rs tests/functional/adapter/test_python_model_client.py
+
+  # driver: dx, the irispython-dx layer beside the driver, over the whole suite with Python models
+  # in both modes. The layer is not on PyPI yet: set the repository variable IRISPYTHON_DX_WHEEL
+  # to a wheel URL to run this job.
+  dx:
+    name: functional (driver dx)
+    if: ${{ vars.IRISPYTHON_DX_WHEEL != '' }}
+    runs-on: ubuntu-latest
+    services:
+      iris:
+        image: containers.intersystems.com/intersystems/iris-community:latest-preview
+        ports:
+          - 1972:1972
+    env:
+      DBT_IRIS_HOST: localhost
+      DBT_IRIS_PORT: "1972"
+      DBT_IRIS_USER: SuperUser
+      DBT_IRIS_PASS: SYS
+      DBT_IRIS_DRIVER: dx
+      DBT_IRIS_PYTHON_MODELS: "1"
+      DBT_IRIS_PYTHON_MODELS_CLIENT: "1"
+      IRISPYTHON_DX_WHEEL: ${{ vars.IRISPYTHON_DX_WHEEL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Wait for IRIS, unexpire passwords, install the layer into IRIS's Python
+        run: |
+          for _ in $(seq 1 60); do
+            docker exec ${{ job.services.iris.id }} iris qlist | grep -q running && break
+            sleep 5
+          done
+          printf ' do ##class(Security.Users).UnExpireUserPasswords("*")\n halt\n' \
+            | docker exec -i ${{ job.services.iris.id }} iris session IRIS -U %SYS
+          pip download -q --no-deps -d /tmp/dx "$IRISPYTHON_DX_WHEEL"
+          docker cp /tmp/dx ${{ job.services.iris.id }}:/tmp/dx
+          docker exec ${{ job.services.iris.id }} sh -c \
+            'python3 -m venv /tmp/pipv && /tmp/pipv/bin/pip install -q --target /usr/irissys/mgr/python pandas sqlalchemy sqlalchemy-intersystems-iris /tmp/dx/*.whl'
+      - name: Install
+        run: |
+          pip install --upgrade pip
+          pip install -e . /tmp/dx/*.whl pandas sqlalchemy-intersystems-iris dbt-tests-adapter "pytest~=7.4" pytest-dotenv flaky freezegun
+          pip list | grep -i -E "^dbt-|irispython"
+      - name: Functional tests
+        run: python -m pytest -q -rs tests/functional
+
   # The tutorial's project (docs/tutorial.md): dbt build twice, so the second run exercises the
   # incremental model and the snapshot on existing tables.
   example:

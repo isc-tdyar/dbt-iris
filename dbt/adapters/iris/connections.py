@@ -23,13 +23,19 @@ from typing_extensions import Annotated
 
 logger = AdapterLogger("iris")
 
-# dbt-iris 2.0.0 connects only through `iris.dbapi` from intersystems-irispython.
-# The bundled 3.x driver and the `driver` choice were removed. `driver: iris` (in the
-# profile or DBT_IRIS_DRIVER) is still accepted so existing profiles keep working.
+# dbt-iris 2.0.0 connects through `iris.dbapi` from intersystems-irispython. The bundled 3.x
+# driver and the other driver choices were removed; `driver: iris` (in the profile or
+# DBT_IRIS_DRIVER) is still accepted so existing profiles keep working. `driver: dx` connects
+# through the irispython-dx layer, `iris_dx.dbapi`, installed beside the official driver.
 DRIVER_ENV = "DBT_IRIS_DRIVER"
+_DRIVERS = ("iris", "dx")
 _REMOVED = (
     "dbt-iris: the {source} {value!r} was removed in dbt-iris 2.0.0. The adapter now connects "
     "only through intersystems-irispython (iris.dbapi); remove the setting or set it to 'iris'."
+)
+_NO_LAYER = (
+    "dbt-iris: driver 'dx' needs the irispython-dx layer installed beside the driver: "
+    "pip install 'dbt-iris[dx]' ({error})"
 )
 
 
@@ -39,10 +45,15 @@ def check_driver(credentials) -> None:
         ("profile setting driver =", profile_driver),
         (f"environment variable {DRIVER_ENV} =", os.environ.get(DRIVER_ENV)),
     ):
-        if value is not None and value != "iris":
+        if value is not None and value not in _DRIVERS:
             raise FailedToConnectError(_REMOVED.format(source=source, value=value))
     if profile_driver == "iris":
         logger.debug("dbt-iris: the `driver` profile setting is no longer needed")
+
+
+def selected_driver(credentials) -> str:
+    """The profile's driver, else DBT_IRIS_DRIVER, else iris (check_driver has passed)."""
+    return getattr(credentials, "driver", None) or os.environ.get(DRIVER_ENV) or "iris"
 
 
 # Another process compiling the same class (two dbt runs replacing one view or table at once)
@@ -73,7 +84,12 @@ def _server_key(connection):
     return (c.hostname, int(c.port), c.database)
 
 
-def _dbapi():
+def _dbapi(driver="iris"):
+    if driver == "dx":
+        try:
+            return importlib.import_module("iris_dx.dbapi")
+        except ImportError as e:
+            raise FailedToConnectError(_NO_LAYER.format(error=e))
     return importlib.import_module("iris.dbapi")
 
 
@@ -93,13 +109,19 @@ def _describe(handle, sql: str):
 
 def connect(credentials):
     """A new driver connection for the profile's credentials (check_driver has passed)."""
-    return _dbapi().connect(
+    driver = selected_driver(credentials)
+    kwargs = dict(
         hostname=credentials.hostname,
         port=credentials.port,
         namespace=credentials.database,
         username=credentials.username,
         password=credentials.password,
     )
+    if driver == "dx":
+        # The layer's autocommit is off (PEP 249); dbt-iris drives its own transactions with
+        # START TRANSACTION and expects the official driver's default.
+        kwargs["autoCommit"] = True
+    return _dbapi(driver).connect(**kwargs)
 
 
 @dataclass
@@ -109,7 +131,7 @@ class IRISCredentials(Credentials):
     password: str
     port: Annotated[Port, Minimum(0), Maximum(65535)]
     application_name: Optional[str] = "dbt"
-    driver: Optional[str] = None  # accepted only as "iris"; see check_driver
+    driver: Optional[str] = None  # "iris" (the default) or "dx"; see check_driver
 
     _ALIASES = {
         "namespace": "database",
