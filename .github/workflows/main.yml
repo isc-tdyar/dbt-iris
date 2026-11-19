@@ -260,14 +260,16 @@ jobs:
       - name: Create Release
         id: create-release
         uses: softprops/action-gh-release@v2
-        if: github.event_name != 'pull_request'
+        # Only a published GitHub release makes a release and publishes; a push, a pull request
+        # or a manual run only builds and tests.
+        if: github.event_name == 'release'
         with:
           tag_name: v${{ steps.set-version.outputs.version }}
-          prerelease: ${{ github.event_name != 'release' }}
+          prerelease: false
           files: dist/dbt_iris-${{ steps.set-version.outputs.version }}-py3-none-any.whl
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish package
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'release'
         uses: pypa/gh-action-pypi-publish@release/v1
       - uses: actions/checkout@v4
         if: github.event_name == 'release'
